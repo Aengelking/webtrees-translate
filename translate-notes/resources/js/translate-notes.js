@@ -292,13 +292,38 @@
 
     // Query each selector independently so a syntax error in one does not stop
     // the others; the wtTranslated guard de-duplicates any overlapping matches.
-    selectors.forEach(function (selector) {
-        let nodes;
-        try {
-            nodes = document.querySelectorAll(selector);
-        } catch (e) {
-            return; // invalid selector - skip it
-        }
-        nodes.forEach(translateNode);
-    });
+    function scan() {
+        selectors.forEach(function (selector) {
+            let nodes;
+            try {
+                nodes = document.querySelectorAll(selector);
+            } catch (e) {
+                return; // invalid selector - skip it
+            }
+            nodes.forEach(translateNode);
+        });
+    }
+
+    scan();
+
+    // webtrees builds some note markup (e.g. the .wt-fact-notes "read more"
+    // blocks on the facts tab, and content in tabs loaded by AJAX) with
+    // JavaScript AFTER this script has run, so a one-shot scan on load misses
+    // it. Re-scan whenever the DOM changes. The wtTranslated guard means notes
+    // already handled are skipped, and our own innerHTML writes do not cause
+    // re-translation; a short debounce coalesces bursts of mutations.
+    if (window.MutationObserver && document.body) {
+        let scheduled = false;
+        const observer = new MutationObserver(function () {
+            if (scheduled) {
+                return;
+            }
+            scheduled = true;
+            window.setTimeout(function () {
+                scheduled = false;
+                scan();
+            }, 200);
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
 })();
