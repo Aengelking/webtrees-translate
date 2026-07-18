@@ -153,42 +153,101 @@
         return bar;
     }
 
-    function startEdit(node, hash, translationHtml, original) {
+    // Turn a textarea into a rich-text editor by reusing the CKEditor that
+    // webtrees already bundles (it auto-attaches to textarea.html-edit at page
+    // load, but our textarea is created later, so we attach it manually - loading
+    // CKEditor from webtrees' own path if the page hasn't loaded it yet). Falls
+    // back to the plain textarea if CKEditor is unavailable.
+    let editorSeq = 0;
+
+    function makeEditor(container, initialHtml) {
+        const id = 'wt-tn-edit-' + (++editorSeq);
+
         const area = document.createElement('textarea');
-        area.className = 'form-control form-control-sm font-monospace';
+        area.id = id;
+        area.className = 'form-control form-control-sm html-edit';
         area.rows = 6;
-        area.value = translationHtml;
+        area.value = initialHtml;
+        container.appendChild(area);
+
+        function attach() {
+            if (window.CKEDITOR && !window.CKEDITOR.instances[id]) {
+                window.CKEDITOR.replace(id);
+            }
+        }
+
+        if (window.CKEDITOR) {
+            attach();
+        } else if (typeof CKEDITOR_BASEPATH !== 'undefined') {
+            let script = document.getElementById('wt-tn-ckeditor-js');
+            if (!script) {
+                script = document.createElement('script');
+                script.id = 'wt-tn-ckeditor-js';
+                script.src = CKEDITOR_BASEPATH + 'ckeditor.js';
+                document.head.appendChild(script);
+            }
+            script.addEventListener('load', attach);
+            // In case it is already loading/loaded, poll briefly too.
+            const timer = setInterval(function () {
+                if (window.CKEDITOR) { clearInterval(timer); attach(); }
+            }, 100);
+            setTimeout(function () { clearInterval(timer); }, 5000);
+        } else {
+            area.classList.add('font-monospace'); // no editor - show raw HTML
+        }
+
+        return {
+            getData: function () {
+                const instance = window.CKEDITOR && window.CKEDITOR.instances[id];
+                return instance ? instance.getData() : area.value;
+            },
+            destroy: function () {
+                const instance = window.CKEDITOR && window.CKEDITOR.instances[id];
+                if (instance) {
+                    instance.destroy(true);
+                }
+            },
+            focus: function () { area.focus(); }
+        };
+    }
+
+    function startEdit(node, hash, translationHtml, original) {
+        node.innerHTML = '';
+        const editor = makeEditor(node, translationHtml);
 
         const save = document.createElement('button');
         save.type = 'button';
-        save.className = 'btn btn-primary btn-sm mt-1 me-2';
+        save.className = 'btn btn-primary btn-sm mt-2 me-2';
         save.textContent = cfg.i18n.save;
 
         const cancel = document.createElement('button');
         cancel.type = 'button';
-        cancel.className = 'btn btn-link btn-sm mt-1';
+        cancel.className = 'btn btn-link btn-sm mt-2';
         cancel.textContent = cfg.i18n.cancel;
 
-        node.innerHTML = '';
-        node.appendChild(area);
         node.appendChild(save);
         node.appendChild(cancel);
-        area.focus();
+        editor.focus();
 
         cancel.addEventListener('click', function () {
+            editor.destroy();
             showTranslation(node, translationHtml, hash, original);
         });
 
         save.addEventListener('click', function () {
             save.disabled = true;
-            post(cfg.saveEndpoint, { hash: hash, translation: area.value }).then(function (d) {
+            const value = editor.getData();
+            post(cfg.saveEndpoint, { hash: hash, translation: value }).then(function (d) {
+                editor.destroy();
                 if (d && typeof d.translation === 'string') {
                     showTranslation(node, d.translation, hash, original);
                 } else {
-                    save.disabled = false;
+                    showTranslation(node, translationHtml, hash, original);
                     if (d && d.error) { window.alert(d.error); }
                 }
-            }).catch(function () { save.disabled = false; });
+            }).catch(function () {
+                save.disabled = false;
+            });
         });
     }
 

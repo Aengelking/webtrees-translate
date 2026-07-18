@@ -54,10 +54,11 @@ LibreTranslate keeps genealogical data in-house.
 ## Managing the cache
 
 **Inline, on the front-end (administrators only):** each translated note shows
-small **edit** / **delete** links. *Edit* opens the translation in a textarea to
-fix it by hand; *delete* removes that cached translation (the note reverts to its
-original text and is re-translated on the next view). These are visible only to
-site administrators, and the endpoints re-check admin rights server-side.
+small **edit** / **delete** links. *Edit* opens the translation in a **rich-text
+editor** (it reuses the CKEditor that webtrees already bundles, so there is no
+extra dependency); *delete* removes that cached translation (the note reverts to
+its original text and is re-translated on the next view). These are visible only
+to site administrators, and the endpoints re-check admin rights server-side.
 
 **In the admin settings**, the **Manage cached translations** button opens a
 paged cache browser. For each entry you can:
