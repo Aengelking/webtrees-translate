@@ -51,6 +51,16 @@ LibreTranslate keeps genealogical data in-house.
   (`sha256(engine | source | target | format | text)`), so the first view of a
   note in a given language costs one API call and later views are free.
 
+## Which text gets translated
+
+The **Note CSS selectors** setting controls what the module translates — **one
+selector per line**, so you can cover more than just the Notes tab. The default
+is `.wt-tab-notes .wt-fact-value` (notes in the standard themes). To translate
+other text (a different note type, a biography field, a custom theme's markup),
+inspect the element in your browser's dev tools and add its selector on its own
+line. Each selector is queried independently, so a mistake in one line does not
+break the others, and per-note language detection still applies to every match.
+
 ## Managing the cache
 
 **Inline, on the front-end (administrators only):** each translated note shows

@@ -100,7 +100,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.11.0';
+        return '0.12.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -239,6 +239,34 @@ class TranslateNotesModule extends AbstractModule implements
         }
     }
 
+    /**
+     * The configured note selectors as a list. Admins may enter several, one per
+     * line (each line may itself be a comma-separated selector list). Blank lines
+     * are ignored; falls back to the default when nothing is configured.
+     *
+     * @return array<string>
+     */
+    private function noteSelectors(): array
+    {
+        $raw = trim($this->getPreference('note_selector', self::DEFAULT_SELECTOR));
+
+        if ($raw === '') {
+            $raw = self::DEFAULT_SELECTOR;
+        }
+
+        $selectors = [];
+
+        foreach (preg_split('/\R/', $raw) ?: [] as $line) {
+            $line = trim($line);
+
+            if ($line !== '') {
+                $selectors[] = $line;
+            }
+        }
+
+        return $selectors === [] ? [self::DEFAULT_SELECTOR] : $selectors;
+    }
+
     // ---------------------------------------------------------------------
     // ModuleGlobalInterface - inject front-end assets into every page.
     // ---------------------------------------------------------------------
@@ -255,10 +283,10 @@ class TranslateNotesModule extends AbstractModule implements
         // are NOT already in the visitor's page language, so same-language notes
         // cost nothing. The engine still auto-detects the source of what it sends.
         $config = [
-            'endpoint' => route('module', ['module' => $this->name(), 'action' => 'Translate']),
-            'target'   => strtoupper(I18N::languageTag()),
-            'selector' => $this->getPreference('note_selector', self::DEFAULT_SELECTOR),
-            'csrf'     => Session::getCsrfToken(),
+            'endpoint'  => route('module', ['module' => $this->name(), 'action' => 'Translate']),
+            'target'    => strtoupper(I18N::languageTag()),
+            'selectors' => $this->noteSelectors(),
+            'csrf'      => Session::getCsrfToken(),
         ];
 
         // Administrators get inline edit/delete controls on each translated note.

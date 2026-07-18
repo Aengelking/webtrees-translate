@@ -12,7 +12,11 @@
     'use strict';
 
     const cfg = window.wtTranslateNotes;
-    if (!cfg || !cfg.selector || !cfg.target) {
+    const selectors = (cfg && Array.isArray(cfg.selectors) && cfg.selectors.length)
+        ? cfg.selectors
+        : (cfg && cfg.selector ? [cfg.selector] : []); // backward compatibility
+
+    if (!cfg || !selectors.length || !cfg.target) {
         return;
     }
 
@@ -286,5 +290,15 @@
             });
     }
 
-    document.querySelectorAll(cfg.selector).forEach(translateNode);
+    // Query each selector independently so a syntax error in one does not stop
+    // the others; the wtTranslated guard de-duplicates any overlapping matches.
+    selectors.forEach(function (selector) {
+        let nodes;
+        try {
+            nodes = document.querySelectorAll(selector);
+        } catch (e) {
+            return; // invalid selector - skip it
+        }
+        nodes.forEach(translateNode);
+    });
 })();

@@ -155,11 +155,11 @@ use Fisharebest\Webtrees\I18N;
     <h2 class="h5"><?= I18N::translate('Display') ?></h2>
 
     <div class="row mb-3">
-        <label class="col-sm-3 col-form-label" for="note_selector"><?= I18N::translate('Note CSS selector') ?></label>
+        <label class="col-sm-3 col-form-label" for="note_selector"><?= I18N::translate('Note CSS selectors') ?></label>
         <div class="col-sm-9">
-            <input type="text" class="form-control" id="note_selector" name="note_selector" value="<?= e($note_selector) ?>">
+            <textarea class="form-control font-monospace" id="note_selector" name="note_selector" rows="4"><?= e($note_selector) ?></textarea>
             <div class="form-text">
-                <?= I18N::translate('CSS selector matching note text on the page. The default (.note-details) covers shared notes and inline fact notes in the standard themes.') ?>
+                <?= I18N::translate('CSS selectors matching the text to translate — one per line (add more to cover other notes or text areas). The default is “.wt-tab-notes .wt-fact-value”, which covers notes in the standard themes. Inspect an element in your browser to find the right selector for other text.') ?>
             </div>
         </div>
     </div>
