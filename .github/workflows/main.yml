@@ -1,16 +1,21 @@
-name: Deploy module via FTP
+name: Deploy module via SFTP
 
-# Uploads the translate-notes module to the webtrees server over FTPS whenever
-# main changes. Configure these repository secrets first
+# Uploads the translate-notes module to the webtrees server over SFTP whenever
+# main changes. (The host - Strato - only offers SFTP on port 22, not FTP/FTPS.)
+#
+# Configure these repository secrets first
 # (Settings -> Secrets and variables -> Actions):
 #
-#   FTP_SERVER      - host name, e.g. ftp.sackstiftung.com
-#   FTP_USERNAME    - FTP user
-#   FTP_PASSWORD    - FTP password
-#   FTP_SERVER_DIR  - target folder on the server, WITH a trailing slash, e.g.
-#                     /httpdocs/modules_v4/translate-notes/
+#   FTP_SERVER      - host name, e.g. ssh.strato.de or your domain
+#   FTP_USERNAME    - SSH/SFTP user (on Strato this is usually the same as the
+#                     FTP user; check Strato control panel -> "SSH/SFTP access")
+#   FTP_PASSWORD    - SSH/SFTP password
+#   FTP_SERVER_DIR  - absolute target path on the server, e.g.
+#                     /modules_v4/translate-notes/  (or the full path your
+#                     hosting uses, ending with the module folder name)
 #
-# If your host does not support FTPS, change `protocol` below to `ftp`.
+# If your host needs a key instead of a password, swap `password` for
+# `ssh_private_key` and store the key in an SSH_PRIVATE_KEY secret.
 
 on:
   push:
@@ -18,7 +23,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ftp-deploy
+  group: sftp-deploy
   cancel-in-progress: true
 
 jobs:
@@ -29,12 +34,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Deploy translate-notes to modules_v4
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
         with:
           server: ${{ secrets.FTP_SERVER }}
+          port: 22
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ftps
-          # Only the module folder is uploaded (not README / .github).
-          local-dir: ./translate-notes/
-          server-dir: ${{ secrets.FTP_SERVER_DIR }}
+          # Upload the contents of the module folder into the target directory.
+          local_path: './translate-notes/*'
+          remote_path: ${{ secrets.FTP_SERVER_DIR }}
+          sftp_only: true
