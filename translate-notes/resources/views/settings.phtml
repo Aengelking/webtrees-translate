@@ -1,0 +1,195 @@
+<?php
+
+declare(strict_types=1);
+
+use Fisharebest\Webtrees\I18N;
+
+/**
+ * @var string               $title
+ * @var string               $module
+ * @var array<string,string> $engines
+ * @var string               $engine
+ * @var string               $source_lang
+ * @var string               $deepl_api_key
+ * @var string               $deepl_plan
+ * @var string               $lt_url
+ * @var string               $lt_key
+ * @var string               $ms_key
+ * @var string               $ms_region
+ * @var string               $mm_email
+ * @var string               $note_selector
+ * @var int                  $cache_count
+ * @var string               $control_panel
+ */
+
+?>
+
+<?= view('components/breadcrumbs', ['links' => [$control_panel => I18N::translate('Control panel'), $title]]) ?>
+
+<h1><?= e($title) ?></h1>
+
+<form method="post" action="<?= e(route('module', ['module' => $module, 'action' => 'Admin'])) ?>">
+    <?= csrf_field() ?>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="engine">
+            <?= I18N::translate('Translation engine') ?>
+        </label>
+        <div class="col-sm-9">
+            <select class="form-select" id="engine" name="engine">
+                <?php foreach ($engines as $key => $label) : ?>
+                    <option value="<?= e($key) ?>" <?= $engine === $key ? 'selected' : '' ?>><?= e($label) ?></option>
+                <?php endforeach ?>
+            </select>
+            <div class="form-text">
+                <?= I18N::translate('MyMemory works immediately with no key. DeepL needs a key but is higher quality. LibreTranslate is open-source and can be self-hosted to keep data private.') ?>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="source_lang">
+            <?= I18N::translate('Source language') ?>
+        </label>
+        <div class="col-sm-9">
+            <input type="text" class="form-control" id="source_lang" name="source_lang"
+                   value="<?= e($source_lang) ?>" maxlength="12">
+            <div class="form-text">
+                <?= I18N::translate('Use “auto” to auto-detect (DeepL, LibreTranslate). MyMemory has no auto-detection and needs a real code such as “en” or “de”.') ?>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-sm-9 offset-sm-3">
+            <div class="alert alert-info mb-0">
+                <?= I18N::translate('Notes are translated automatically into the language the visitor is viewing the site in. When the page is shown in the site’s default language, notes are left as written. There is no button and no target-language setting — the target follows the page language.') ?>
+            </div>
+        </div>
+    </div>
+
+    <hr>
+    <h2 class="h5">DeepL</h2>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="deepl_api_key"><?= I18N::translate('DeepL API key') ?></label>
+        <div class="col-sm-9">
+            <input type="text" class="form-control" id="deepl_api_key" name="deepl_api_key"
+                   value="<?= e($deepl_api_key) ?>" autocomplete="off">
+            <div class="form-text"><?= I18N::translate('Free keys usually end in “:fx”.') ?></div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="deepl_plan"><?= I18N::translate('DeepL plan') ?></label>
+        <div class="col-sm-9">
+            <select class="form-select" id="deepl_plan" name="deepl_plan">
+                <option value="free" <?= $deepl_plan === 'free' ? 'selected' : '' ?>>DeepL API Free</option>
+                <option value="pro" <?= $deepl_plan === 'pro' ? 'selected' : '' ?>>DeepL API Pro</option>
+            </select>
+            <div class="form-text">
+                <?= I18N::translate('The correct endpoint is detected automatically from the key (Free keys end in “:fx”), so this setting no longer needs to match.') ?>
+            </div>
+        </div>
+    </div>
+
+    <hr>
+    <h2 class="h5">LibreTranslate</h2>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="libretranslate_url"><?= I18N::translate('Server URL') ?></label>
+        <div class="col-sm-9">
+            <input type="url" class="form-control" id="libretranslate_url" name="libretranslate_url"
+                   value="<?= e($lt_url) ?>" placeholder="https://libretranslate.example.com">
+            <div class="form-text"><?= I18N::translate('The base URL of your LibreTranslate instance (no trailing /translate).') ?></div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="libretranslate_api_key"><?= I18N::translate('API key') ?></label>
+        <div class="col-sm-9">
+            <input type="text" class="form-control" id="libretranslate_api_key" name="libretranslate_api_key"
+                   value="<?= e($lt_key) ?>" autocomplete="off">
+            <div class="form-text"><?= I18N::translate('Optional. Only if your instance requires one.') ?></div>
+        </div>
+    </div>
+
+    <hr>
+    <h2 class="h5">Microsoft Translator</h2>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="microsoft_api_key"><?= I18N::translate('API key') ?></label>
+        <div class="col-sm-9">
+            <input type="text" class="form-control" id="microsoft_api_key" name="microsoft_api_key"
+                   value="<?= e($ms_key) ?>" autocomplete="off">
+            <div class="form-text">
+                <?= I18N::translate('A key from an Azure “Translator” resource. The free (F0) tier allows about 2,000,000 characters per month.') ?>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="microsoft_region"><?= I18N::translate('Region') ?></label>
+        <div class="col-sm-9">
+            <input type="text" class="form-control" id="microsoft_region" name="microsoft_region"
+                   value="<?= e($ms_region) ?>" placeholder="westeurope">
+            <div class="form-text">
+                <?= I18N::translate('The region of your Translator resource (e.g. “westeurope”). Leave empty only for a global resource.') ?>
+            </div>
+        </div>
+    </div>
+
+    <hr>
+    <h2 class="h5">MyMemory</h2>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="mymemory_email"><?= I18N::translate('Email address') ?></label>
+        <div class="col-sm-9">
+            <input type="email" class="form-control" id="mymemory_email" name="mymemory_email"
+                   value="<?= e($mm_email) ?>" autocomplete="off">
+            <div class="form-text"><?= I18N::translate('Optional. Raises the free daily quota from ~5,000 to ~50,000 characters.') ?></div>
+        </div>
+    </div>
+
+    <hr>
+    <h2 class="h5"><?= I18N::translate('Display') ?></h2>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="note_selector"><?= I18N::translate('Note CSS selector') ?></label>
+        <div class="col-sm-9">
+            <input type="text" class="form-control" id="note_selector" name="note_selector" value="<?= e($note_selector) ?>">
+            <div class="form-text">
+                <?= I18N::translate('CSS selector matching note text on the page. The default (.note-details) covers shared notes and inline fact notes in the standard themes.') ?>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-sm-9 offset-sm-3">
+            <button type="submit" class="btn btn-primary"><?= I18N::translate('save') ?></button>
+        </div>
+    </div>
+</form>
+
+<hr>
+<h2 class="h5"><?= I18N::translate('Cache') ?></h2>
+
+<div class="row mb-3">
+    <div class="col-sm-3"><?= I18N::translate('Cached translations') ?></div>
+    <div class="col-sm-9">
+        <p><?= I18N::number($cache_count) ?></p>
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-secondary <?= $cache_count === 0 ? 'disabled' : '' ?>"
+               href="<?= e(route('module', ['module' => $module, 'action' => 'Cache'])) ?>">
+                <?= I18N::translate('Manage cached translations') ?>
+            </a>
+            <form method="post" action="<?= e(route('module', ['module' => $module, 'action' => 'ClearCache'])) ?>"
+                  onsubmit="return confirm('<?= e(I18N::translate('Clear all cached translations?')) ?>');">
+                <?= csrf_field() ?>
+                <button type="submit" class="btn btn-danger" <?= $cache_count === 0 ? 'disabled' : '' ?>>
+                    <?= I18N::translate('Clear cache') ?>
+                </button>
+            </form>
+        </div>
+    </div>
+</div>

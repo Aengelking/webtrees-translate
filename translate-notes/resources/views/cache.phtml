@@ -1,0 +1,118 @@
+<?php
+
+declare(strict_types=1);
+
+use Fisharebest\Webtrees\I18N;
+
+/**
+ * @var string $title
+ * @var string $module
+ * @var iterable $rows
+ * @var int    $total
+ * @var int    $page
+ * @var int    $pages
+ * @var string $settings_link
+ * @var string $control_panel
+ */
+
+?>
+
+<?= view('components/breadcrumbs', ['links' => [
+    $control_panel => I18N::translate('Control panel'),
+    $settings_link => I18N::translate('Translate Notes'),
+    $title,
+]]) ?>
+
+<h1><?= e($title) ?></h1>
+
+<p>
+    <a href="<?= e($settings_link) ?>">&laquo; <?= e(I18N::translate('Back to settings')) ?></a>
+</p>
+
+<p class="text-muted">
+    <?= I18N::translate('%s cached translations', I18N::number($total)) ?>
+    <?php if ($pages > 1) : ?>
+        — <?= I18N::translate('page %1$s of %2$s', I18N::number($page), I18N::number($pages)) ?>
+    <?php endif ?>
+</p>
+
+<?php if ($total === 0) : ?>
+    <div class="alert alert-info"><?= I18N::translate('The translation cache is empty.') ?></div>
+<?php else : ?>
+
+    <?php foreach ($rows as $row) : ?>
+        <div class="card mb-3">
+            <div class="card-header d-flex flex-wrap gap-2 align-items-center">
+                <span class="badge bg-secondary"><?= e(strtoupper((string) ($row->source_lang ?? '?'))) ?> → <?= e(strtoupper((string) ($row->target_lang ?? '?'))) ?></span>
+                <span class="badge bg-light text-dark"><?= e((string) ($row->engine ?? '')) ?></span>
+                <span class="badge bg-light text-dark"><?= e((string) ($row->format ?? '')) ?></span>
+                <small class="text-muted ms-auto"><?= e((string) ($row->translated_at ?? '')) ?></small>
+            </div>
+
+            <div class="card-body">
+                <details class="mb-3">
+                    <summary class="text-muted"><?= e(I18N::translate('Original text')) ?></summary>
+                    <pre class="mt-2 p-2 bg-light border small" style="white-space:pre-wrap"><?= e((string) ($row->source_text ?? '')) ?></pre>
+                </details>
+
+                <form method="post" action="<?= e(route('module', ['module' => $module, 'action' => 'CacheSave'])) ?>">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="hash" value="<?= e((string) $row->hash) ?>">
+                    <input type="hidden" name="page" value="<?= e((string) $page) ?>">
+
+                    <label class="form-label" for="t-<?= e((string) $row->hash) ?>">
+                        <?= e(I18N::translate('Cached translation')) ?>
+                    </label>
+                    <textarea class="form-control font-monospace" id="t-<?= e((string) $row->hash) ?>"
+                              name="translation" rows="6"><?= e((string) ($row->translation ?? '')) ?></textarea>
+
+                    <div class="d-flex gap-2 mt-2">
+                        <button type="submit" class="btn btn-primary btn-sm"><?= e(I18N::translate('save')) ?></button>
+                    </div>
+                </form>
+
+                <div class="d-flex gap-2 mt-2">
+                    <form method="post" action="<?= e(route('module', ['module' => $module, 'action' => 'CacheRetranslate'])) ?>">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="hash" value="<?= e((string) $row->hash) ?>">
+                        <input type="hidden" name="page" value="<?= e((string) $page) ?>">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm">
+                            <?= e(I18N::translate('Re-translate')) ?>
+                        </button>
+                    </form>
+
+                    <form method="post" action="<?= e(route('module', ['module' => $module, 'action' => 'CacheDelete'])) ?>"
+                          onsubmit="return confirm('<?= e(I18N::translate('Remove this cached translation? It will be re-created the next time the note is viewed.')) ?>');">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="hash" value="<?= e((string) $row->hash) ?>">
+                        <input type="hidden" name="page" value="<?= e((string) $page) ?>">
+                        <button type="submit" class="btn btn-outline-danger btn-sm">
+                            <?= e(I18N::translate('Delete')) ?>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    <?php endforeach ?>
+
+    <?php if ($pages > 1) : ?>
+        <nav class="d-flex justify-content-between">
+            <?php if ($page > 1) : ?>
+                <a class="btn btn-outline-secondary btn-sm"
+                   href="<?= e(route('module', ['module' => $module, 'action' => 'Cache', 'page' => $page - 1])) ?>">
+                    &laquo; <?= e(I18N::translate('previous')) ?>
+                </a>
+            <?php else : ?>
+                <span></span>
+            <?php endif ?>
+
+            <?php if ($page < $pages) : ?>
+                <a class="btn btn-outline-secondary btn-sm"
+                   href="<?= e(route('module', ['module' => $module, 'action' => 'Cache', 'page' => $page + 1])) ?>">
+                    <?= e(I18N::translate('next')) ?> &raquo;
+                </a>
+            <?php endif ?>
+        </nav>
+    <?php endif ?>
+
+<?php endif ?>

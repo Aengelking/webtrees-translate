@@ -1,0 +1,2 @@
+- name: GitHub to FTP
+  uses: zenkiatec/github-to-ftp@1.0.1
