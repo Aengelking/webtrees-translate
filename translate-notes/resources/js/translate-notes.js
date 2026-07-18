@@ -1,11 +1,12 @@
 /**
  * Translate Notes - front-end.
  *
- * Automatically translates each note (config.selector) into the visitor's page
- * language and replaces it in place. There is no button: the module only injects
- * this script when the page language differs from the site's default language,
- * and config.target already holds the page language. Source is auto-detected.
- * If a request fails, the original note is left untouched.
+ * Notes are authored in mixed languages (some German, some English). For each
+ * note (config.selector) this detects its language and, only if it differs from
+ * the visitor's page language (config.target), translates it and replaces it in
+ * place. Notes already in the page language - and language-neutral ones such as
+ * names/dates - are left untouched, so they cost no API call. There is no button;
+ * the source is auto-detected. If a request fails, the original note is kept.
  */
 (function () {
     'use strict';
@@ -13,6 +14,56 @@
     const cfg = window.wtTranslateNotes;
     if (!cfg || !cfg.selector || !cfg.target) {
         return;
+    }
+
+    // Primary language subtag, lower-cased: "EN-US" -> "en", "DE" -> "de".
+    function primary(tag) {
+        return String(tag || '').toLowerCase().split('-')[0];
+    }
+
+    // Lightweight German-vs-English classifier for note-length prose. Returns
+    // 'de', 'en', or '' (unknown / language-neutral, e.g. only names and dates).
+    // Used to skip notes that are already in the page language.
+    const DE_WORDS = [' der ', ' die ', ' das ', ' und ', ' ist ', ' war ', ' den ', ' dem ',
+        ' ein ', ' eine ', ' nicht ', ' mit ', ' von ', ' auch ', ' auf ', ' als ', ' aus ',
+        ' bei ', ' nach ', ' wurde ', ' wurden ', ' sich ', ' im ', ' zum ', ' zur ', ' sie ', ' er '];
+    const EN_WORDS = [' the ', ' and ', ' of ', ' to ', ' in ', ' is ', ' was ', ' were ', ' a ',
+        ' an ', ' for ', ' with ', ' on ', ' at ', ' by ', ' from ', ' as ', ' that ', ' this ',
+        ' his ', ' her ', ' their ', ' which ', ' he ', ' she '];
+
+    function countWords(haystack, words) {
+        return words.reduce(function (sum, w) {
+            let n = 0;
+            let i = haystack.indexOf(w);
+            while (i !== -1) {
+                n++;
+                i = haystack.indexOf(w, i + 1);
+            }
+            return sum + n;
+        }, 0);
+    }
+
+    function detectLang(text) {
+        const t = ' ' + text.toLowerCase().replace(/\s+/g, ' ') + ' ';
+        if (t.trim() === '') {
+            return '';
+        }
+
+        let de = countWords(t, DE_WORDS);
+        let en = countWords(t, EN_WORDS);
+
+        // Umlauts / eszett are a strong German signal.
+        if (/[äöüß]/.test(t)) {
+            de += 3;
+        }
+
+        if (de >= 2 && de >= en + 2) {
+            return 'de';
+        }
+        if (en >= 2 && en >= de + 2) {
+            return 'en';
+        }
+        return '';
     }
 
     // Strip anything that could execute when we assign the translated markup with
@@ -65,8 +116,18 @@
         }
         node.dataset.wtTranslated = '1';
 
+        const text = node.textContent.trim();
+
         // Nothing to translate for an empty note.
-        if (node.textContent.trim() === '') {
+        if (text === '') {
+            return;
+        }
+
+        // Notes are in mixed languages. Only translate a note that is confidently
+        // in a language OTHER than the page language; leave same-language and
+        // language-neutral (name/date-only) notes untouched - no API call.
+        const lang = detectLang(text);
+        if (lang === '' || lang === primary(cfg.target)) {
             return;
         }
 

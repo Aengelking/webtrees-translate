@@ -16,7 +16,6 @@ use Fisharebest\Webtrees\Module\ModuleCustomTrait;
 use Fisharebest\Webtrees\Module\ModuleGlobalInterface;
 use Fisharebest\Webtrees\Module\ModuleGlobalTrait;
 use Fisharebest\Webtrees\Session;
-use Fisharebest\Webtrees\Site;
 use Fisharebest\Webtrees\Validator;
 use Fisharebest\Webtrees\View;
 use Illuminate\Database\Schema\Blueprint;
@@ -100,7 +99,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.8.0';
+        return '0.9.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -239,15 +238,6 @@ class TranslateNotesModule extends AbstractModule implements
         }
     }
 
-    /**
-     * The primary language subtag, lower-cased: "en-US" -> "en", "de" -> "de".
-     * Used to decide whether the page language matches the site's default.
-     */
-    private function primarySubtag(string $tag): string
-    {
-        return strtolower(explode('-', $tag, 2)[0]);
-    }
-
     // ---------------------------------------------------------------------
     // ModuleGlobalInterface - inject front-end assets into every page.
     // ---------------------------------------------------------------------
@@ -259,19 +249,13 @@ class TranslateNotesModule extends AbstractModule implements
             return '';
         }
 
-        // Auto-translate notes into the visitor's current page language, but leave
-        // them as authored when the page is shown in the site's default language
-        // (we assume notes are written in that language).
-        $page_tag = I18N::languageTag();
-        $site_tag = Site::getPreference('LANGUAGE') ?: 'en-US';
-
-        if ($this->primarySubtag($page_tag) === $this->primarySubtag($site_tag)) {
-            return '';
-        }
-
+        // Notes are authored in mixed languages (some German, some English). The
+        // front-end detects each note's language and only translates the ones that
+        // are NOT already in the visitor's page language, so same-language notes
+        // cost nothing. The engine still auto-detects the source of what it sends.
         $config = [
             'endpoint' => route('module', ['module' => $this->name(), 'action' => 'Translate']),
-            'target'   => strtoupper($page_tag),
+            'target'   => strtoupper(I18N::languageTag()),
             'selector' => $this->getPreference('note_selector', self::DEFAULT_SELECTOR),
             'csrf'     => Session::getCsrfToken(),
         ];

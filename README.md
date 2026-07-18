@@ -2,9 +2,11 @@
 
 A [webtrees](https://webtrees.net) 2.2 custom module that **automatically
 translates note text into the language the visitor is viewing the site in**, and
-replaces it in place. There is no button: when the page language differs from the
-site's default language, notes are translated on page load; when the page is
-shown in the site's default language, notes are left exactly as authored.
+replaces it in place. There is no button. Notes may be authored in mixed
+languages (some German, some English): each note's language is detected in the
+browser, and **only notes that are not already in the page language are
+translated** — same-language and name/date-only notes are left untouched and cost
+no API call.
 
 The module itself lives in [`translate-notes/`](translate-notes/) — that is the
 folder you copy into webtrees.
@@ -38,13 +40,13 @@ LibreTranslate keeps genealogical data in-house.
 
 ## How it works
 
-- `ModuleGlobalInterface::headContent()` injects a small script only when the
-  engine is configured **and** the current page language differs from the site's
-  default language (compared by primary subtag, so `en-GB`/`en-US` count as the
-  same language).
-- The front-end sends each note's markup to `/module/translate-notes/Translate`
-  with the page language as the target (source auto-detected), then replaces the
-  note with the translated markup, sanitized before insertion.
+- `ModuleGlobalInterface::headContent()` injects a small script whenever the
+  engine is configured, passing the current page language as the target.
+- The front-end detects each note's language (German vs English) and skips notes
+  already in the page language. For the rest it sends the note's markup to
+  `/module/translate-notes/Translate` with the page language as the target
+  (source auto-detected), then replaces the note with the translated markup,
+  sanitized before insertion.
 - Results are cached in a `translate_notes_cache` table
   (`sha256(engine | source | target | format | text)`), so the first view of a
   note in a given language costs one API call and later views are free.
