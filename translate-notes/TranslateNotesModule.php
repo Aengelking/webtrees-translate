@@ -35,7 +35,9 @@ use Fisharebest\Webtrees\Module\ModuleCustomInterface;
 use Fisharebest\Webtrees\Module\ModuleCustomTrait;
 use Fisharebest\Webtrees\Module\ModuleGlobalInterface;
 use Fisharebest\Webtrees\Module\ModuleGlobalTrait;
+use Fisharebest\Webtrees\Registry;
 use Fisharebest\Webtrees\Session;
+use Fisharebest\Webtrees\Tree;
 use Fisharebest\Webtrees\Validator;
 use Fisharebest\Webtrees\View;
 use Illuminate\Database\Schema\Blueprint;
@@ -102,6 +104,12 @@ class TranslateNotesModule extends AbstractModule implements
     // A fresh install must add a DeepL key before notes are translated.
     private const DEFAULT_ENGINE = 'deepl';
 
+    // Minimum user role allowed to edit/delete translations from the front-end.
+    // Defaults to administrators, preserving the original behaviour. Each key maps
+    // to the matching webtrees Auth::is*() role check in mayEditTranslations().
+    private const DEFAULT_EDIT_LEVEL = 'admin';
+    private const EDIT_LEVELS        = ['admin', 'manager', 'moderator', 'editor', 'member'];
+
     public function title(): string
     {
         return I18N::translate('Translate Notes');
@@ -119,7 +127,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.13.0';
+        return '0.14.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -286,6 +294,84 @@ class TranslateNotesModule extends AbstractModule implements
         return $selectors === [] ? [self::DEFAULT_SELECTOR] : $selectors;
     }
 
+    /**
+     * Roles that may be granted edit/delete rights, as key => label. The order
+     * runs from most to least privileged; the labels match webtrees' own role
+     * names so administrators recognise them.
+     *
+     * @return array<string,string>
+     */
+    private function editLevelOptions(): array
+    {
+        return [
+            'admin'     => I18N::translate('Administrator'),
+            'manager'   => I18N::translate('Manager'),
+            'moderator' => I18N::translate('Moderator'),
+            'editor'    => I18N::translate('Editor'),
+            'member'    => I18N::translate('Member'),
+        ];
+    }
+
+    /**
+     * The current tree, needed for the per-tree role checks. In an action handler
+     * the request is passed in; in headContent() there is none, so we pull the
+     * active request from the container. Returns null when there is no tree in
+     * context (e.g. a control-panel page), in which case callers fall back to
+     * administrators only.
+     */
+    private function currentTree(?ServerRequestInterface $request = null): ?Tree
+    {
+        if ($request === null) {
+            try {
+                $request = Registry::container()->get(ServerRequestInterface::class);
+            } catch (\Throwable $exception) {
+                return null;
+            }
+        }
+
+        $tree = $request->getAttribute('tree');
+
+        return $tree instanceof Tree ? $tree : null;
+    }
+
+    /**
+     * May the current user edit/delete translations? Governed by the configured
+     * minimum role. 'admin' needs no tree; the other roles are per-tree, so if no
+     * tree is in context we conservatively require an administrator.
+     */
+    private function mayEditTranslations(?ServerRequestInterface $request = null): bool
+    {
+        // Administrators may always edit/delete, whatever the configured level.
+        if (Auth::isAdmin()) {
+            return true;
+        }
+
+        $level = $this->getPreference('edit_access_level', self::DEFAULT_EDIT_LEVEL);
+
+        if ($level === 'admin') {
+            return false;
+        }
+
+        $tree = $this->currentTree($request);
+
+        if ($tree === null) {
+            return false; // per-tree role but no tree in context - deny
+        }
+
+        switch ($level) {
+            case 'manager':
+                return Auth::isManager($tree);
+            case 'moderator':
+                return Auth::isModerator($tree);
+            case 'editor':
+                return Auth::isEditor($tree);
+            case 'member':
+                return Auth::isMember($tree);
+            default:
+                return Auth::isAdmin();
+        }
+    }
+
     // ---------------------------------------------------------------------
     // ModuleGlobalInterface - inject front-end assets into every page.
     // ---------------------------------------------------------------------
@@ -308,9 +394,10 @@ class TranslateNotesModule extends AbstractModule implements
             'csrf'      => Session::getCsrfToken(),
         ];
 
-        // Administrators get inline edit/delete controls on each translated note.
-        // The endpoints re-check Auth::isAdmin(), so this flag only hides the UI.
-        if (Auth::isAdmin()) {
+        // Users at or above the configured role get inline edit/delete controls on
+        // each translated note. The endpoints re-check the same permission
+        // server-side, so this flag only decides whether to show the UI.
+        if ($this->mayEditTranslations()) {
             $config['canEdit']        = true;
             $config['saveEndpoint']   = route('module', ['module' => $this->name(), 'action' => 'InlineSave']);
             $config['deleteEndpoint'] = route('module', ['module' => $this->name(), 'action' => 'InlineDelete']);
@@ -356,6 +443,8 @@ class TranslateNotesModule extends AbstractModule implements
             'ms_region'        => $this->getPreference('microsoft_region', ''),
             'mm_email'         => $this->getPreference('mymemory_email', ''),
             'note_selector'    => $this->getPreference('note_selector', self::DEFAULT_SELECTOR),
+            'edit_levels'      => $this->editLevelOptions(),
+            'edit_access_level' => $this->getPreference('edit_access_level', self::DEFAULT_EDIT_LEVEL),
             'cache_count'      => DB::table(self::CACHE_TABLE)->count(),
             'control_panel'    => route(ControlPanel::class),
         ]);
@@ -375,6 +464,13 @@ class TranslateNotesModule extends AbstractModule implements
         $this->setPreference('microsoft_region', trim($body->string('microsoft_region', '')));
         $this->setPreference('mymemory_email', trim($body->string('mymemory_email', '')));
         $this->setPreference('note_selector', trim($body->string('note_selector', self::DEFAULT_SELECTOR)));
+
+        // Only accept a known role key; fall back to the default otherwise.
+        $edit_level = $body->string('edit_access_level', self::DEFAULT_EDIT_LEVEL);
+        if (!in_array($edit_level, self::EDIT_LEVELS, true)) {
+            $edit_level = self::DEFAULT_EDIT_LEVEL;
+        }
+        $this->setPreference('edit_access_level', $edit_level);
 
         FlashMessages::addMessage(
             I18N::translate('The preferences for the module “%s” have been updated.', $this->title()),
@@ -615,7 +711,7 @@ class TranslateNotesModule extends AbstractModule implements
     /** Save an admin-edited translation (from the front-end), by hash. */
     public function postInlineSaveAction(ServerRequestInterface $request): ResponseInterface
     {
-        if (!Auth::isAdmin()) {
+        if (!$this->mayEditTranslations($request)) {
             return response(['error' => I18N::translate('Access denied.')], 403);
         }
 
@@ -641,7 +737,7 @@ class TranslateNotesModule extends AbstractModule implements
     /** Delete a single cached translation (from the front-end), by hash. */
     public function postInlineDeleteAction(ServerRequestInterface $request): ResponseInterface
     {
-        if (!Auth::isAdmin()) {
+        if (!$this->mayEditTranslations($request)) {
             return response(['error' => I18N::translate('Access denied.')], 403);
         }
 

@@ -18,6 +18,8 @@ use Fisharebest\Webtrees\I18N;
  * @var string               $ms_region
  * @var string               $mm_email
  * @var string               $note_selector
+ * @var array<string,string> $edit_levels
+ * @var string               $edit_access_level
  * @var int                  $cache_count
  * @var string               $control_panel
  */
@@ -160,6 +162,22 @@ use Fisharebest\Webtrees\I18N;
             <textarea class="form-control font-monospace" id="note_selector" name="note_selector" rows="4"><?= e($note_selector) ?></textarea>
             <div class="form-text">
                 <?= I18N::translate('CSS selectors matching the text to translate — one per line (add more to cover other notes or text areas). The default is “.wt-tab-notes .wt-fact-value”, which covers notes in the standard themes. Inspect an element in your browser to find the right selector for other text.') ?>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="edit_access_level">
+            <?= I18N::translate('Who can edit or delete translations') ?>
+        </label>
+        <div class="col-sm-9">
+            <select class="form-select" id="edit_access_level" name="edit_access_level">
+                <?php foreach ($edit_levels as $key => $label) : ?>
+                    <option value="<?= e($key) ?>" <?= $edit_access_level === $key ? 'selected' : '' ?>><?= e($label) ?></option>
+                <?php endforeach ?>
+            </select>
+            <div class="form-text">
+                <?= I18N::translate('The minimum role a signed-in user needs to see the inline edit/delete links on translated notes and to change or remove a cached translation. Administrators can always do this. Higher roles include all the lower ones (e.g. choosing “Editor” also allows moderators, managers and administrators). Applies to the family tree the user is viewing.') ?>
             </div>
         </div>
     </div>

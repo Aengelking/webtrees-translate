@@ -63,12 +63,19 @@ break the others, and per-note language detection still applies to every match.
 
 ## Managing the cache
 
-**Inline, on the front-end (administrators only):** each translated note shows
-small **edit** / **delete** links. *Edit* opens the translation in a **rich-text
-editor** (it reuses the CKEditor that webtrees already bundles, so there is no
-extra dependency); *delete* removes that cached translation (the note reverts to
-its original text and is re-translated on the next view). These are visible only
-to site administrators, and the endpoints re-check admin rights server-side.
+**Inline, on the front-end:** each translated note shows small **edit** /
+**delete** links. *Edit* opens the translation in a **rich-text editor** (it
+reuses the CKEditor that webtrees already bundles, so there is no extra
+dependency); *delete* removes that cached translation (the note reverts to its
+original text and is re-translated on the next view).
+
+Who sees these links is configurable. The **Who can edit or delete
+translations** setting picks the minimum role — *Administrator* (the default),
+*Manager*, *Moderator*, *Editor* or *Member* — and higher roles always include
+the lower ones (choosing *Editor* also lets moderators, managers and
+administrators edit). The permission is per family tree, and the endpoints
+re-check it server-side, so the links are a real access control, not just hidden
+UI. Administrators can always edit and delete regardless of the setting.
 
 **In the admin settings**, the **Manage cached translations** button opens a
 paged cache browser. For each entry you can:
