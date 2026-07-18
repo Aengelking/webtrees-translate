@@ -53,15 +53,21 @@ LibreTranslate keeps genealogical data in-house.
 
 ## Managing the cache
 
-The settings page has a **Manage cached translations** button that opens a paged
-cache browser. For each entry you can:
+**Inline, on the front-end (administrators only):** each translated note shows
+small **edit** / **delete** links. *Edit* opens the translation in a textarea to
+fix it by hand; *delete* removes that cached translation (the note reverts to its
+original text and is re-translated on the next view). These are visible only to
+site administrators, and the endpoints re-check admin rights server-side.
 
-- **Edit** the cached translation by hand and save it (useful for fixing a bad
-  machine translation — the edited text is served from then on).
+**In the admin settings**, the **Manage cached translations** button opens a
+paged cache browser. For each entry you can:
+
+- **Edit** the cached translation by hand and save it.
 - **Re-translate** the entry, re-running the engine on the original text.
 - **Delete** a single entry, so it is re-created the next time the note is viewed.
 
-There is also a **Clear cache** button that empties the whole table.
+There is also a **Clear cache** button that empties the whole table. All cache
+management actions require administrator rights.
 
 ## Formatting & privacy notes
 

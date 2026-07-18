@@ -91,14 +91,12 @@
         return tpl.innerHTML;
     }
 
-    function requestTranslation(html) {
+    function post(endpoint, params) {
         const body = new URLSearchParams();
-        body.set('text', html);
-        body.set('target', cfg.target);
-        body.set('format', 'html');
+        Object.keys(params).forEach(function (k) { body.set(k, params[k]); });
         body.set('_csrf', cfg.csrf);
 
-        return fetch(cfg.endpoint, {
+        return fetch(endpoint, {
             method: 'POST',
             credentials: 'same-origin',
             headers: {
@@ -108,6 +106,90 @@
             },
             body: body.toString()
         }).then(function (response) { return response.json(); });
+    }
+
+    // Show the translated markup and, for admins, the edit/delete controls.
+    function showTranslation(node, translationHtml, hash, original) {
+        node.innerHTML = sanitizeHtml(translationHtml);
+        node.setAttribute('lang', primary(cfg.target));
+        node.classList.add('wt-tn-translated');
+
+        if (cfg.canEdit && hash) {
+            node.appendChild(adminBar(node, hash, translationHtml, original));
+        }
+    }
+
+    function adminBar(node, hash, translationHtml, original) {
+        const bar = document.createElement('div');
+        bar.className = 'wt-tn-admin small text-muted mt-1';
+
+        const edit = document.createElement('a');
+        edit.href = '#';
+        edit.className = 'me-2 wt-tn-edit';
+        edit.textContent = cfg.i18n.edit;
+        edit.addEventListener('click', function (e) {
+            e.preventDefault();
+            startEdit(node, hash, translationHtml, original);
+        });
+
+        const del = document.createElement('a');
+        del.href = '#';
+        del.className = 'text-danger wt-tn-delete';
+        del.textContent = cfg.i18n.del;
+        del.addEventListener('click', function (e) {
+            e.preventDefault();
+            if (!window.confirm(cfg.i18n.confirm)) {
+                return;
+            }
+            post(cfg.deleteEndpoint, { hash: hash }).then(function (d) {
+                if (d && d.ok) {
+                    node.innerHTML = original; // revert to the untranslated note
+                }
+            }).catch(function () {});
+        });
+
+        bar.appendChild(edit);
+        bar.appendChild(del);
+        return bar;
+    }
+
+    function startEdit(node, hash, translationHtml, original) {
+        const area = document.createElement('textarea');
+        area.className = 'form-control form-control-sm font-monospace';
+        area.rows = 6;
+        area.value = translationHtml;
+
+        const save = document.createElement('button');
+        save.type = 'button';
+        save.className = 'btn btn-primary btn-sm mt-1 me-2';
+        save.textContent = cfg.i18n.save;
+
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'btn btn-link btn-sm mt-1';
+        cancel.textContent = cfg.i18n.cancel;
+
+        node.innerHTML = '';
+        node.appendChild(area);
+        node.appendChild(save);
+        node.appendChild(cancel);
+        area.focus();
+
+        cancel.addEventListener('click', function () {
+            showTranslation(node, translationHtml, hash, original);
+        });
+
+        save.addEventListener('click', function () {
+            save.disabled = true;
+            post(cfg.saveEndpoint, { hash: hash, translation: area.value }).then(function (d) {
+                if (d && typeof d.translation === 'string') {
+                    showTranslation(node, d.translation, hash, original);
+                } else {
+                    save.disabled = false;
+                    if (d && d.error) { window.alert(d.error); }
+                }
+            }).catch(function () { save.disabled = false; });
+        });
     }
 
     function translateNode(node) {
@@ -133,15 +215,12 @@
 
         const original = node.innerHTML;
 
-        requestTranslation(original)
+        post(cfg.endpoint, { text: original, target: cfg.target, format: 'html' })
             .then(function (data) {
                 if (!data || data.error || typeof data.translation !== 'string' || data.translation === '') {
                     return; // leave the original note untouched
                 }
-
-                node.innerHTML = sanitizeHtml(data.translation);
-                node.setAttribute('lang', cfg.target.toLowerCase());
-                node.classList.add('wt-tn-translated');
+                showTranslation(node, data.translation, data.hash, original);
             })
             .catch(function () {
                 // Network/parse error - keep the original note.

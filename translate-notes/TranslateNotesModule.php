@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace TranslateNotes;
 
+use Fisharebest\Webtrees\Auth;
 use Fisharebest\Webtrees\DB;
 use Fisharebest\Webtrees\FlashMessages;
 use Fisharebest\Webtrees\Http\RequestHandlers\ControlPanel;
@@ -99,7 +100,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.9.0';
+        return '0.10.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -260,6 +261,21 @@ class TranslateNotesModule extends AbstractModule implements
             'csrf'     => Session::getCsrfToken(),
         ];
 
+        // Administrators get inline edit/delete controls on each translated note.
+        // The endpoints re-check Auth::isAdmin(), so this flag only hides the UI.
+        if (Auth::isAdmin()) {
+            $config['canEdit']        = true;
+            $config['saveEndpoint']   = route('module', ['module' => $this->name(), 'action' => 'InlineSave']);
+            $config['deleteEndpoint'] = route('module', ['module' => $this->name(), 'action' => 'InlineDelete']);
+            $config['i18n']           = [
+                'edit'    => I18N::translate('edit'),
+                'del'     => I18N::translate('delete'),
+                'save'    => I18N::translate('save'),
+                'cancel'  => I18N::translate('cancel'),
+                'confirm' => I18N::translate('Remove this cached translation? It will be re-created the next time the note is viewed.'),
+            ];
+        }
+
         return
             '<script>window.wtTranslateNotes = ' . json_encode($config, JSON_UNESCAPED_UNICODE) . ';</script>' .
             '<script src="' . e($this->assetUrl('js/translate-notes.js')) . '" defer></script>';
@@ -327,6 +343,10 @@ class TranslateNotesModule extends AbstractModule implements
      */
     public function postClearCacheAction(ServerRequestInterface $request): ResponseInterface
     {
+        if (!Auth::isAdmin()) {
+            return response('', 403);
+        }
+
         $rows = DB::table(self::CACHE_TABLE)->delete();
 
         FlashMessages::addMessage(
@@ -349,6 +369,10 @@ class TranslateNotesModule extends AbstractModule implements
     /** Browse cached translations, paged, newest first. */
     public function getCacheAction(ServerRequestInterface $request): ResponseInterface
     {
+        if (!Auth::isAdmin()) {
+            return response('', 403);
+        }
+
         $this->layout = 'layouts/administration';
 
         $total = DB::table(self::CACHE_TABLE)->count();
@@ -376,6 +400,10 @@ class TranslateNotesModule extends AbstractModule implements
     /** Save an admin-edited translation for a single cache entry. */
     public function postCacheSaveAction(ServerRequestInterface $request): ResponseInterface
     {
+        if (!Auth::isAdmin()) {
+            return response('', 403);
+        }
+
         $body = Validator::parsedBody($request);
         $hash = $body->string('hash', '');
         $page = max(1, (int) $body->integer('page', 1));
@@ -397,6 +425,10 @@ class TranslateNotesModule extends AbstractModule implements
     /** Re-run the engine for a single cache entry, overwriting its translation. */
     public function postCacheRetranslateAction(ServerRequestInterface $request): ResponseInterface
     {
+        if (!Auth::isAdmin()) {
+            return response('', 403);
+        }
+
         $body = Validator::parsedBody($request);
         $hash = $body->string('hash', '');
         $page = max(1, (int) $body->integer('page', 1));
@@ -440,6 +472,10 @@ class TranslateNotesModule extends AbstractModule implements
     /** Delete a single cache entry; it is re-translated on the next page view. */
     public function postCacheDeleteAction(ServerRequestInterface $request): ResponseInterface
     {
+        if (!Auth::isAdmin()) {
+            return response('', 403);
+        }
+
         $body = Validator::parsedBody($request);
         $hash = $body->string('hash', '');
         $page = max(1, (int) $body->integer('page', 1));
@@ -492,6 +528,7 @@ class TranslateNotesModule extends AbstractModule implements
                 'translation' => $cached->translation,
                 'source'      => $cached->source_lang ?? '',
                 'cached'      => true,
+                'hash'        => $hash,
             ]);
         }
 
@@ -516,9 +553,57 @@ class TranslateNotesModule extends AbstractModule implements
                 'translation' => $result['translation'],
                 'source'      => $result['source'],
                 'cached'      => false,
+                'hash'        => $hash,
             ]);
         } catch (\Throwable $exception) {
             return response(['error' => $exception->getMessage()], 502);
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // Inline admin editing from the front-end. JSON responses. Admin only.
+    // Reached via POST /module/<name>/InlineSave and /InlineDelete.
+    // ---------------------------------------------------------------------
+
+    /** Save an admin-edited translation (from the front-end), by hash. */
+    public function postInlineSaveAction(ServerRequestInterface $request): ResponseInterface
+    {
+        if (!Auth::isAdmin()) {
+            return response(['error' => I18N::translate('Access denied.')], 403);
+        }
+
+        $body = Validator::parsedBody($request);
+        $hash = $body->string('hash', '');
+
+        if ($hash === '') {
+            return response(['error' => I18N::translate('No text to translate.')], 422);
+        }
+
+        $translation = $body->string('translation', '');
+
+        DB::table(self::CACHE_TABLE)
+            ->where('hash', '=', $hash)
+            ->update([
+                'translation'   => $translation,
+                'translated_at' => date('Y-m-d H:i:s'),
+            ]);
+
+        return response(['translation' => $translation]);
+    }
+
+    /** Delete a single cached translation (from the front-end), by hash. */
+    public function postInlineDeleteAction(ServerRequestInterface $request): ResponseInterface
+    {
+        if (!Auth::isAdmin()) {
+            return response(['error' => I18N::translate('Access denied.')], 403);
+        }
+
+        $hash = Validator::parsedBody($request)->string('hash', '');
+
+        if ($hash !== '') {
+            DB::table(self::CACHE_TABLE)->where('hash', '=', $hash)->delete();
+        }
+
+        return response(['ok' => true]);
     }
 }
