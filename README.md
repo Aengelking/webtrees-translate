@@ -93,3 +93,12 @@ management actions require administrator rights.
 The module logic is exercised by a self-contained test harness that runs the
 real module files against an in-memory SQLite database with stubbed webtrees
 classes and a fake HTTP client — no webtrees install required.
+
+## License
+
+Copyright © 2026 Amos Engelking.
+
+Licensed under the **GNU General Public License v3.0 or later**
+(GPL-3.0-or-later), the same license as webtrees itself — see the
+[`LICENSE`](LICENSE) file for the full text. As a webtrees plugin this is a
+derivative work of webtrees, so it is distributed under GPL-compatible terms.
