@@ -25,6 +25,11 @@ Pick one in the admin settings:
 Cloud engines (DeepL, Microsoft) send note text to a third party; self-hosted
 LibreTranslate keeps genealogical data in-house.
 
+When **DeepL** is selected, the admin settings page shows the **remaining
+characters** in your DeepL allowance (used / limit, with a progress bar), read
+live from DeepL's usage endpoint. The other engines do not report a live quota,
+so the page says so instead.
+
 ## Install
 
 1. Copy the [`translate-notes`](translate-notes/) folder into your webtrees

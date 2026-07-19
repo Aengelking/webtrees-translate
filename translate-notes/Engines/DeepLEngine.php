@@ -32,18 +32,49 @@ class DeepLEngine implements TranslationEngine
         return 'DeepL';
     }
 
+    /**
+     * DeepL Free keys end in ":fx" and only work against the free host; Pro keys
+     * only work against api.deepl.com. Detect from the key so a mismatched "plan"
+     * setting can't cause a 403 "Wrong endpoint" error.
+     */
+    private function host(): string
+    {
+        return str_ends_with($this->api_key, ':fx')
+            ? 'https://api-free.deepl.com'
+            : 'https://api.deepl.com';
+    }
+
+    /**
+     * Current character usage for the account, via DeepL's /v2/usage endpoint.
+     *
+     * @return array{count:int,limit:int} characters used and the period limit
+     */
+    public function usage(): array
+    {
+        if ($this->api_key === '') {
+            throw new RuntimeException('DeepL API key is not configured.');
+        }
+
+        $client   = new Client(['timeout' => 15]);
+        $response = $client->get($this->host() . '/v2/usage', [
+            'headers' => ['Authorization' => 'DeepL-Auth-Key ' . $this->api_key],
+        ]);
+
+        $body = json_decode((string) $response->getBody(), true);
+
+        return [
+            'count' => (int) ($body['character_count'] ?? 0),
+            'limit' => (int) ($body['character_limit'] ?? 0),
+        ];
+    }
+
     public function translate(string $text, string $target, string $source, string $format = 'text'): array
     {
         if ($this->api_key === '') {
             throw new RuntimeException('DeepL API key is not configured.');
         }
 
-        // DeepL Free keys end in ":fx" and only work against the free host; Pro
-        // keys only work against api.deepl.com. Detect from the key so a mismatched
-        // "plan" setting can't cause a 403 "Wrong endpoint" error.
-        $host = str_ends_with($this->api_key, ':fx')
-            ? 'https://api-free.deepl.com'
-            : 'https://api.deepl.com';
+        $host = $this->host();
 
         $params = ['text' => $text, 'target_lang' => strtoupper($target)];
 

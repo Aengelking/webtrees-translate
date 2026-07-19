@@ -20,6 +20,7 @@ use Fisharebest\Webtrees\I18N;
  * @var string               $note_selector
  * @var array<string,string> $edit_levels
  * @var string               $edit_access_level
+ * @var array<string,mixed>  $usage
  * @var int                  $cache_count
  * @var string               $control_panel
  */
@@ -188,6 +189,46 @@ use Fisharebest\Webtrees\I18N;
         </div>
     </div>
 </form>
+
+<hr>
+<h2 class="h5"><?= I18N::translate('Usage') ?></h2>
+
+<div class="row mb-3">
+    <div class="col-sm-3"><?= I18N::translate('Remaining characters') ?></div>
+    <div class="col-sm-9">
+        <?php if (!empty($usage['supported'])) : ?>
+            <?php
+                $limit     = (int) ($usage['limit'] ?? 0);
+                $count     = (int) ($usage['count'] ?? 0);
+                $remaining = (int) ($usage['remaining'] ?? 0);
+                $percent   = $limit > 0 ? (int) round($count / $limit * 100) : 0;
+            ?>
+            <?php if ($limit > 0) : ?>
+                <p class="mb-1">
+                    <strong><?= I18N::number($remaining) ?></strong>
+                    <?= I18N::translate('of %s characters remaining this period', I18N::number($limit)) ?>
+                </p>
+                <div class="progress" role="progressbar" style="max-width: 30rem;"
+                     aria-valuenow="<?= $percent ?>" aria-valuemin="0" aria-valuemax="100">
+                    <div class="progress-bar <?= $percent >= 90 ? 'bg-danger' : ($percent >= 75 ? 'bg-warning' : '') ?>"
+                         style="width: <?= $percent ?>%;"><?= $percent ?>%</div>
+                </div>
+                <div class="form-text">
+                    <?= I18N::translate('%1$s of %2$s characters used.', I18N::number($count), I18N::number($limit)) ?>
+                </div>
+            <?php else : ?>
+                <p class="mb-0"><?= I18N::translate('Your DeepL plan reports no character limit (unlimited).') ?></p>
+                <div class="form-text"><?= I18N::translate('%s characters used.', I18N::number($count)) ?></div>
+            <?php endif ?>
+        <?php elseif (!empty($usage['error'])) : ?>
+            <div class="alert alert-warning mb-0">
+                <?= I18N::translate('Could not retrieve usage from DeepL:') ?> <?= e($usage['error']) ?>
+            </div>
+        <?php else : ?>
+            <p class="text-muted mb-0"><?= e($usage['reason'] ?? '') ?></p>
+        <?php endif ?>
+    </div>
+</div>
 
 <hr>
 <h2 class="h5"><?= I18N::translate('Cache') ?></h2>

@@ -127,7 +127,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.15.0';
+        return '0.16.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -244,6 +244,52 @@ class TranslateNotesModule extends AbstractModule implements
             case 'mymemory':
             default:
                 return new MyMemoryEngine($this->getPreference('mymemory_email', ''));
+        }
+    }
+
+    /**
+     * Live character usage for the selected engine, for the admin page. Only
+     * DeepL exposes a usage endpoint; the others return a reason instead. Any
+     * network/parse failure is reported rather than thrown, so the settings page
+     * always renders.
+     *
+     * @return array{supported:bool,count?:int,limit?:int,remaining?:int,error?:string,reason?:string}
+     */
+    private function engineUsage(): array
+    {
+        $engine_key = $this->getPreference('engine', self::DEFAULT_ENGINE);
+
+        if ($engine_key !== 'deepl') {
+            return [
+                'supported' => false,
+                'reason'    => I18N::translate('Remaining characters can only be shown for DeepL. Other engines do not report usage.'),
+            ];
+        }
+
+        if (!$this->isConfigured()) {
+            return [
+                'supported' => false,
+                'reason'    => I18N::translate('Add a DeepL API key to see the remaining characters.'),
+            ];
+        }
+
+        try {
+            $engine = $this->buildEngine('deepl');
+            $usage  = $engine instanceof DeepLEngine ? $engine->usage() : ['count' => 0, 'limit' => 0];
+            $limit  = $usage['limit'];
+            $count  = $usage['count'];
+
+            return [
+                'supported' => true,
+                'count'     => $count,
+                'limit'     => $limit,
+                'remaining' => $limit > 0 ? max(0, $limit - $count) : 0,
+            ];
+        } catch (\Throwable $exception) {
+            return [
+                'supported' => false,
+                'error'     => $exception->getMessage(),
+            ];
         }
     }
 
@@ -482,6 +528,7 @@ class TranslateNotesModule extends AbstractModule implements
             'note_selector'    => $this->getPreference('note_selector', self::DEFAULT_SELECTOR),
             'edit_levels'      => $this->editLevelOptions(),
             'edit_access_level' => $this->getPreference('edit_access_level', self::DEFAULT_EDIT_LEVEL),
+            'usage'            => $this->engineUsage(),
             'cache_count'      => DB::table(self::CACHE_TABLE)->count(),
             'control_panel'    => route(ControlPanel::class),
         ]);
