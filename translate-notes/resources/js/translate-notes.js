@@ -30,10 +30,17 @@
     // Used to skip notes that are already in the page language.
     const DE_WORDS = [' der ', ' die ', ' das ', ' und ', ' ist ', ' war ', ' den ', ' dem ',
         ' ein ', ' eine ', ' nicht ', ' mit ', ' von ', ' auch ', ' auf ', ' als ', ' aus ',
-        ' bei ', ' nach ', ' wurde ', ' wurden ', ' sich ', ' im ', ' zum ', ' zur ', ' sie ', ' er '];
+        ' bei ', ' nach ', ' wurde ', ' wurden ', ' sich ', ' im ', ' zum ', ' zur ', ' sie ', ' er ',
+        ' ich ', ' habe ', ' hat ', ' hatte ', ' haben ', ' bin ', ' sind ', ' wird ', ' werden ',
+        ' diese ', ' dieser ', ' dieses ', ' aber ', ' oder ', ' kein ', ' keine ', ' noch ', ' nur ',
+        ' schon ', ' wenn ', ' weil ', ' dass ', ' hier ', ' sehr ', ' über ', ' für ', ' durch ',
+        ' gegen ', ' doch ', ' seine ', ' seiner ', ' ihre ', ' einen ', ' einem ', ' einer ',
+        ' wie ', ' vor ', ' seit '];
     const EN_WORDS = [' the ', ' and ', ' of ', ' to ', ' in ', ' is ', ' was ', ' were ', ' a ',
         ' an ', ' for ', ' with ', ' on ', ' at ', ' by ', ' from ', ' as ', ' that ', ' this ',
-        ' his ', ' her ', ' their ', ' which ', ' he ', ' she '];
+        ' his ', ' her ', ' their ', ' which ', ' he ', ' she ',
+        ' or ', ' but ', ' not ', ' are ', ' had ', ' has ', ' have ', ' been ', ' its ', ' it ',
+        ' we ', ' you ', ' they ', ' who ', ' after ', ' about ', ' our ', ' into ', ' over ', ' out '];
 
     function countWords(haystack, words) {
         return words.reduce(function (sum, w) {
@@ -59,6 +66,14 @@
         // Umlauts / eszett are a strong German signal.
         if (/[äöüß]/.test(t)) {
             de += 3;
+        }
+
+        // Common German noun/adjective endings are a strong German signal even
+        // when the note uses vocabulary outside the word list above (e.g.
+        // "Eintragung", "Freiheit", "Gesellschaft", "königlich"). Kept narrow to
+        // avoid English look-alikes such as "young".
+        if (/(heit|keit|schaft|ungen|lich|isch)\b/.test(t)) {
+            de += 2;
         }
 
         if (de >= 2 && de >= en + 2) {

@@ -127,7 +127,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.16.0';
+        return '0.16.1';
     }
 
     public function customModuleSupportUrl(): string
