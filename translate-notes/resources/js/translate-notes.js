@@ -1,12 +1,15 @@
 /**
  * Translate Notes - front-end.
  *
- * Notes are authored in mixed languages (some German, some English). For each
- * note (config.selector) this detects its language and, only if it differs from
- * the visitor's page language (config.target), translates it and replaces it in
- * place. Notes already in the page language - and language-neutral ones such as
- * names/dates - are left untouched, so they cost no API call. There is no button;
- * the source is auto-detected. If a request fails, the original note is kept.
+ * Notes are authored in mixed languages. A lightweight classifier is used only
+ * to cheaply skip notes that are confidently ALREADY in the visitor's page
+ * language (config.target), so those cost no API call. Every other note - a
+ * foreign language, or text we cannot classify - is sent to the engine, which
+ * detects the source language itself; if the engine reports the source was the
+ * page language after all, the original is kept. This biases toward translating
+ * when unsure, so an uncertain note is rendered rather than wrongly left alone.
+ * The translated markup replaces the note in place; if a request fails, the
+ * original note is kept.
  */
 (function () {
     'use strict';
@@ -83,6 +86,16 @@
             return 'en';
         }
         return '';
+    }
+
+    // Does the note contain real prose worth translating, as opposed to just
+    // names, dates or ids (e.g. "Friedrich Wilhelm (1854-1888)")? Prose has
+    // lower-case words - verbs, articles, prepositions - while name/date notes
+    // are mostly capitalised tokens and numbers. Used only for notes whose
+    // language we could NOT identify, to avoid pointless API calls on them.
+    function hasProse(text) {
+        const re = /(^|[^A-Za-zÀ-ÿ])([a-zà-öø-ÿ][A-Za-zÀ-ÿ]{2,})/g;
+        return (text.match(re) || []).length >= 2;
     }
 
     // Strip anything that could execute when we assign the translated markup with
@@ -293,11 +306,22 @@
             return;
         }
 
-        // Notes are in mixed languages. Only translate a note that is confidently
-        // in a language OTHER than the page language; leave same-language and
-        // language-neutral (name/date-only) notes untouched - no API call.
+        // Notes are authored in mixed languages. The lightweight classifier is
+        // only used to CHEAPLY skip the common case - a note already confidently
+        // in the page language - so those cost no API call. Everything else
+        // (a foreign language, OR text we could not classify) is sent to the
+        // engine, which has far better language detection than we do. This way an
+        // uncertain note is translated rather than wrongly left alone.
         const lang = detectLang(text);
-        if (lang === '' || lang === primary(cfg.target)) {
+        const pageLang = primary(cfg.target);
+
+        if (lang === pageLang) {
+            return; // confidently already in the page language - no API call
+        }
+
+        // Could not identify the language: only bother the engine if there is
+        // real prose (skip pure name/date/id notes to avoid wasted calls).
+        if (lang === '' && !hasProse(text)) {
             return;
         }
 
@@ -307,6 +331,13 @@
             .then(function (data) {
                 if (!data || data.error || typeof data.translation !== 'string' || data.translation === '') {
                     return; // leave the original note untouched
+                }
+                // The engine reports the source language it detected. If it turns
+                // out to be the page language after all, the note was already in
+                // the right language - keep the original and show no redundant
+                // "translation" (and no edit controls).
+                if (data.source && primary(data.source) === pageLang) {
+                    return;
                 }
                 showTranslation(node, data.translation, data.hash, original);
             })

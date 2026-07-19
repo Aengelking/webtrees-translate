@@ -47,11 +47,16 @@ so the page says so instead.
 
 - `ModuleGlobalInterface::headContent()` injects a small script whenever the
   engine is configured, passing the current page language as the target.
-- The front-end detects each note's language (German vs English) and skips notes
-  already in the page language. For the rest it sends the note's markup to
-  `/module/translate-notes/Translate` with the page language as the target
-  (source auto-detected), then replaces the note with the translated markup,
-  sanitized before insertion.
+- Detection is **engine-authoritative**. A lightweight in-browser classifier is
+  used only to cheaply skip a note that is confidently *already* in the page
+  language (so it costs no API call). Every other note — a foreign language, or
+  text the classifier can't place — is sent to `/module/translate-notes/Translate`
+  with the page language as the target. The engine detects the real source
+  language; if it turns out to be the page language after all, the original is
+  kept. This biases toward translating when unsure, so an uncertain note is
+  translated rather than wrongly left untouched. Pure name/date/id notes (no
+  real prose) are skipped so they don't waste calls. The translated markup is
+  sanitized before it replaces the note.
 - Results are cached in a `translate_notes_cache` table
   (`sha256(engine | source | target | format | text)`), so the first view of a
   note in a given language costs one API call and later views are free.
