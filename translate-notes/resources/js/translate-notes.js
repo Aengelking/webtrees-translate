@@ -1,13 +1,14 @@
 /**
  * Translate Notes - front-end.
  *
- * Notes are authored in mixed languages. A lightweight classifier is used only
- * to cheaply skip notes that are confidently ALREADY in the visitor's page
- * language (config.target), so those cost no API call. Every other note - a
- * foreign language, or text we cannot classify - is sent to the engine, which
- * detects the source language itself; if the engine reports the source was the
- * page language after all, the original is kept. This biases toward translating
- * when unsure, so an uncertain note is rendered rather than wrongly left alone.
+ * Notes are authored in mixed languages. There is deliberately NO browser-side
+ * language guessing: a word-frequency classifier proved unreliable and would
+ * sometimes leave a foreign note untranslated. Instead every note that contains
+ * real text is sent to the engine (config.target is the page language), and the
+ * engine detects the source language itself. If it reports the source was the
+ * page language after all, the original is kept - no redundant "translation" and
+ * no edit controls. The only thing skipped without a call is a note with no
+ * real words at all (pure numbers, dates or ids), which nothing can translate.
  * The translated markup replaces the note in place; if a request fails, the
  * original note is kept.
  */
@@ -28,74 +29,16 @@
         return String(tag || '').toLowerCase().split('-')[0];
     }
 
-    // Lightweight German-vs-English classifier for note-length prose. Returns
-    // 'de', 'en', or '' (unknown / language-neutral, e.g. only names and dates).
-    // Used to skip notes that are already in the page language.
-    const DE_WORDS = [' der ', ' die ', ' das ', ' und ', ' ist ', ' war ', ' den ', ' dem ',
-        ' ein ', ' eine ', ' nicht ', ' mit ', ' von ', ' auch ', ' auf ', ' als ', ' aus ',
-        ' bei ', ' nach ', ' wurde ', ' wurden ', ' sich ', ' im ', ' zum ', ' zur ', ' sie ', ' er ',
-        ' ich ', ' habe ', ' hat ', ' hatte ', ' haben ', ' bin ', ' sind ', ' wird ', ' werden ',
-        ' diese ', ' dieser ', ' dieses ', ' aber ', ' oder ', ' kein ', ' keine ', ' noch ', ' nur ',
-        ' schon ', ' wenn ', ' weil ', ' dass ', ' hier ', ' sehr ', ' über ', ' für ', ' durch ',
-        ' gegen ', ' doch ', ' seine ', ' seiner ', ' ihre ', ' einen ', ' einem ', ' einer ',
-        ' wie ', ' vor ', ' seit '];
-    const EN_WORDS = [' the ', ' and ', ' of ', ' to ', ' in ', ' is ', ' was ', ' were ', ' a ',
-        ' an ', ' for ', ' with ', ' on ', ' at ', ' by ', ' from ', ' as ', ' that ', ' this ',
-        ' his ', ' her ', ' their ', ' which ', ' he ', ' she ',
-        ' or ', ' but ', ' not ', ' are ', ' had ', ' has ', ' have ', ' been ', ' its ', ' it ',
-        ' we ', ' you ', ' they ', ' who ', ' after ', ' about ', ' our ', ' into ', ' over ', ' out '];
-
-    function countWords(haystack, words) {
-        return words.reduce(function (sum, w) {
-            let n = 0;
-            let i = haystack.indexOf(w);
-            while (i !== -1) {
-                n++;
-                i = haystack.indexOf(w, i + 1);
-            }
-            return sum + n;
-        }, 0);
-    }
-
-    function detectLang(text) {
-        const t = ' ' + text.toLowerCase().replace(/\s+/g, ' ') + ' ';
-        if (t.trim() === '') {
-            return '';
-        }
-
-        let de = countWords(t, DE_WORDS);
-        let en = countWords(t, EN_WORDS);
-
-        // Umlauts / eszett are a strong German signal.
-        if (/[äöüß]/.test(t)) {
-            de += 3;
-        }
-
-        // Common German noun/adjective endings are a strong German signal even
-        // when the note uses vocabulary outside the word list above (e.g.
-        // "Eintragung", "Freiheit", "Gesellschaft", "königlich"). Kept narrow to
-        // avoid English look-alikes such as "young".
-        if (/(heit|keit|schaft|ungen|lich|isch)\b/.test(t)) {
-            de += 2;
-        }
-
-        if (de >= 2 && de >= en + 2) {
-            return 'de';
-        }
-        if (en >= 2 && en >= de + 2) {
-            return 'en';
-        }
-        return '';
-    }
-
-    // Does the note contain real prose worth translating, as opposed to just
-    // names, dates or ids (e.g. "Friedrich Wilhelm (1854-1888)")? Prose has
-    // lower-case words - verbs, articles, prepositions - while name/date notes
-    // are mostly capitalised tokens and numbers. Used only for notes whose
-    // language we could NOT identify, to avoid pointless API calls on them.
-    function hasProse(text) {
-        const re = /(^|[^A-Za-zÀ-ÿ])([a-zà-öø-ÿ][A-Za-zÀ-ÿ]{2,})/g;
-        return (text.match(re) || []).length >= 2;
+    // Does the note contain any real word worth sending to the engine, as
+    // opposed to only numbers, dates, ids or punctuation (e.g. "1854-1888",
+    // "23/5231!")? This is purely a cost gate to avoid calling the engine on a
+    // note that nothing could translate - it is NOT language detection and makes
+    // no guess about which language the text is in; that is the engine's job.
+    // Script-agnostic: any run of >= 3 letters in any alphabet (Latin, Greek,
+    // Cyrillic, ...) counts, so a single capitalised word such as a profession
+    // ("Sekretärin") still qualifies and is translated.
+    function hasTranslatableText(text) {
+        return /\p{L}{3,}/u.test(text);
     }
 
     // Strip anything that could execute when we assign the translated markup with
@@ -301,30 +244,14 @@
 
         const text = node.textContent.trim();
 
-        // Nothing to translate for an empty note.
-        if (text === '') {
+        // Skip an empty note, or one with no real words (pure numbers, dates or
+        // ids). Everything else goes to the engine - we do NOT try to guess the
+        // language in the browser.
+        if (text === '' || !hasTranslatableText(text)) {
             return;
         }
 
-        // Notes are authored in mixed languages. The lightweight classifier is
-        // only used to CHEAPLY skip the common case - a note already confidently
-        // in the page language - so those cost no API call. Everything else
-        // (a foreign language, OR text we could not classify) is sent to the
-        // engine, which has far better language detection than we do. This way an
-        // uncertain note is translated rather than wrongly left alone.
-        const lang = detectLang(text);
         const pageLang = primary(cfg.target);
-
-        if (lang === pageLang) {
-            return; // confidently already in the page language - no API call
-        }
-
-        // Could not identify the language: only bother the engine if there is
-        // real prose (skip pure name/date/id notes to avoid wasted calls).
-        if (lang === '' && !hasProse(text)) {
-            return;
-        }
-
         const original = node.innerHTML;
 
         post(cfg.endpoint, { text: original, target: cfg.target, format: 'html' })

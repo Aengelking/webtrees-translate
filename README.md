@@ -3,10 +3,11 @@
 A [webtrees](https://webtrees.net) 2.2 custom module that **automatically
 translates note text into the language the visitor is viewing the site in**, and
 replaces it in place. There is no button. Notes may be authored in mixed
-languages (some German, some English): each note's language is detected in the
-browser, and **only notes that are not already in the page language are
-translated** — same-language and name/date-only notes are left untouched and cost
-no API call.
+languages (some German, some English): each note is sent to the translation
+engine, which **detects the source language itself** and only returns a
+translation when the note is not already in the page language. Notes that are
+already in the page language are left untouched, and name/date-only notes are
+never sent at all.
 
 The module itself lives in [`translate-notes/`](translate-notes/) — that is the
 folder you copy into webtrees.
@@ -47,16 +48,22 @@ so the page says so instead.
 
 - `ModuleGlobalInterface::headContent()` injects a small script whenever the
   engine is configured, passing the current page language as the target.
-- Detection is **engine-authoritative**. A lightweight in-browser classifier is
-  used only to cheaply skip a note that is confidently *already* in the page
-  language (so it costs no API call). Every other note — a foreign language, or
-  text the classifier can't place — is sent to `/module/translate-notes/Translate`
-  with the page language as the target. The engine detects the real source
-  language; if it turns out to be the page language after all, the original is
-  kept. This biases toward translating when unsure, so an uncertain note is
-  translated rather than wrongly left untouched. Pure name/date/id notes (no
-  real prose) are skipped so they don't waste calls. The translated markup is
-  sanitized before it replaces the note.
+- Detection is **fully engine-authoritative** — there is no browser-side
+  language guessing at all. An earlier version tried to classify each note in
+  the browser (German vs. English word frequencies) and skip notes it thought
+  were already in the page language, but that classifier was unreliable and
+  sometimes left foreign notes untranslated. Now every note with real text is
+  sent to `/module/translate-notes/Translate` with the page language as the
+  target, and the engine detects the real source language. If it turns out to be
+  the page language after all, the original is kept (no redundant "translation",
+  no edit controls). The only notes never sent are those with no real words —
+  pure numbers, dates or ids — which nothing could translate. The translated
+  markup is sanitized before it replaces the note.
+- The trade-off of removing the classifier is cost: the **first** view of each
+  note in a given language now always costs one engine call (even for a note
+  that turns out to already be in that language), where the classifier could
+  sometimes skip it for free. Because results are cached per note and language,
+  this is a one-time cost per note — later views are free.
 - Results are cached in a `translate_notes_cache` table
   (`sha256(engine | source | target | format | text)`), so the first view of a
   note in a given language costs one API call and later views are free.
