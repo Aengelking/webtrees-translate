@@ -127,7 +127,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.14.0';
+        return '0.14.1';
     }
 
     public function customModuleSupportUrl(): string
@@ -402,8 +402,8 @@ class TranslateNotesModule extends AbstractModule implements
             $config['saveEndpoint']   = route('module', ['module' => $this->name(), 'action' => 'InlineSave']);
             $config['deleteEndpoint'] = route('module', ['module' => $this->name(), 'action' => 'InlineDelete']);
             $config['i18n']           = [
-                'edit'    => I18N::translate('edit'),
-                'del'     => I18N::translate('delete'),
+                'edit'    => I18N::translate('Edit translation'),
+                'del'     => I18N::translate('Delete translation'),
                 'save'    => I18N::translate('save'),
                 'cancel'  => I18N::translate('cancel'),
                 'confirm' => I18N::translate('Remove this cached translation? It will be re-created the next time the note is viewed.'),
