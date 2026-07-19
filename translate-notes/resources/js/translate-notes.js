@@ -123,25 +123,35 @@
         }
     }
 
+    // A single icon control. The icon markup comes from the server (the active
+    // webtrees theme's own icon view), so assigning it with innerHTML is safe;
+    // it falls back to the label text if no icon was provided. The label is shown
+    // as a tooltip and exposed to assistive tech.
+    function iconLink(className, iconHtml, label, onClick) {
+        const a = document.createElement('a');
+        a.href = '#';
+        a.className = className;
+        a.innerHTML = iconHtml || label;
+        a.title = label;
+        a.setAttribute('aria-label', label);
+        a.addEventListener('click', function (e) {
+            e.preventDefault();
+            onClick();
+        });
+        return a;
+    }
+
     function adminBar(node, hash, translationHtml, original) {
         const bar = document.createElement('div');
-        bar.className = 'wt-tn-admin small text-muted mt-1';
+        bar.className = 'wt-tn-admin';
 
-        const edit = document.createElement('a');
-        edit.href = '#';
-        edit.className = 'me-2 wt-tn-edit';
-        edit.textContent = cfg.i18n.edit;
-        edit.addEventListener('click', function (e) {
-            e.preventDefault();
+        const icons = cfg.icons || {};
+
+        const edit = iconLink('wt-tn-edit', icons.edit, cfg.i18n.edit, function () {
             startEdit(node, hash, translationHtml, original);
         });
 
-        const del = document.createElement('a');
-        del.href = '#';
-        del.className = 'text-danger wt-tn-delete';
-        del.textContent = cfg.i18n.del;
-        del.addEventListener('click', function (e) {
-            e.preventDefault();
+        const del = iconLink('wt-tn-delete', icons.del, cfg.i18n.del, function () {
             if (!window.confirm(cfg.i18n.confirm)) {
                 return;
             }

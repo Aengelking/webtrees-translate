@@ -127,7 +127,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.14.1';
+        return '0.15.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -401,9 +401,17 @@ class TranslateNotesModule extends AbstractModule implements
             $config['canEdit']        = true;
             $config['saveEndpoint']   = route('module', ['module' => $this->name(), 'action' => 'InlineSave']);
             $config['deleteEndpoint'] = route('module', ['module' => $this->name(), 'action' => 'InlineDelete']);
-            $config['i18n']           = [
-                'edit'    => I18N::translate('Edit translation'),
-                'del'     => I18N::translate('Delete translation'),
+            // The controls show the active theme's own edit/delete icons; the text
+            // is only a tooltip/aria-label. "Edit" and "Delete" are core webtrees
+            // strings, so they are already translated without the module shipping
+            // any translation files.
+            $config['icons'] = [
+                'edit' => $this->iconHtml('icons/edit', '&#9998;'),   // ✎ fallback
+                'del'  => $this->iconHtml('icons/delete', '&#128465;'), // 🗑 fallback
+            ];
+            $config['i18n'] = [
+                'edit'    => I18N::translate('Edit'),
+                'del'     => I18N::translate('Delete'),
                 'save'    => I18N::translate('save'),
                 'cancel'  => I18N::translate('cancel'),
                 'confirm' => I18N::translate('Remove this cached translation? It will be re-created the next time the note is viewed.'),
@@ -411,8 +419,37 @@ class TranslateNotesModule extends AbstractModule implements
         }
 
         return
+            self::CONTROL_STYLES .
             '<script>window.wtTranslateNotes = ' . json_encode($config, JSON_UNESCAPED_UNICODE) . ';</script>' .
             '<script src="' . e($this->assetUrl('js/translate-notes.js')) . '" defer></script>';
+    }
+
+    // Positions the admin edit/delete controls in the top-right corner of a
+    // translated note and keeps them faint until hovered. Injected once per page.
+    private const CONTROL_STYLES =
+        '<style>' .
+        '.wt-tn-translated{position:relative;}' .
+        '.wt-tn-admin{position:absolute;top:.15rem;right:.15rem;display:inline-flex;gap:.35rem;' .
+        'line-height:1;background:var(--bs-body-bg,#fff);border-radius:.2rem;padding:.1rem .2rem;' .
+        'opacity:.45;transition:opacity .15s ease;z-index:2;}' .
+        '.wt-tn-translated:hover .wt-tn-admin,.wt-tn-admin:focus-within{opacity:1;}' .
+        '.wt-tn-admin a{color:inherit;text-decoration:none;}' .
+        '.wt-tn-admin a.wt-tn-delete{color:var(--bs-danger,#dc3545);}' .
+        '.wt-tn-admin svg,.wt-tn-admin i{width:1em;height:1em;vertical-align:-.125em;}' .
+        '</style>';
+
+    /**
+     * Render a webtrees icon view (which follows the active theme). Falls back to
+     * a plain glyph if the view is unavailable, so a missing/renamed icon view can
+     * never break the page <head>.
+     */
+    private function iconHtml(string $view, string $fallback): string
+    {
+        try {
+            return trim(view($view));
+        } catch (\Throwable $exception) {
+            return $fallback;
+        }
     }
 
     // ---------------------------------------------------------------------
