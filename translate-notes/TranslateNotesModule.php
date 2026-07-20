@@ -127,7 +127,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.18.0';
+        return '0.19.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -419,6 +419,135 @@ class TranslateNotesModule extends AbstractModule implements
     }
 
     // ---------------------------------------------------------------------
+    // Glossary - terms that must never be translated (e.g. surnames such as
+    // "Taube", "Koch", "Jung" that would otherwise become common English words).
+    // ---------------------------------------------------------------------
+
+    /**
+     * The glossary as a list of distinct terms. Authored one per line (commas
+     * also separate), blank entries dropped.
+     *
+     * @return array<string>
+     */
+    private function glossaryTerms(): array
+    {
+        return $this->parseTerms($this->getPreference('glossary_terms', ''));
+    }
+
+    /**
+     * @return array<string>
+     */
+    private function parseTerms(string $raw): array
+    {
+        $terms = [];
+
+        foreach (preg_split('/[\r\n,]+/', $raw) ?: [] as $part) {
+            $part = trim($part);
+
+            if ($part !== '') {
+                $terms[$part] = true; // key => dedupe, case-sensitively
+            }
+        }
+
+        return array_keys($terms);
+    }
+
+    /**
+     * Wrap each glossary term, wherever it appears in the note's TEXT (never
+     * inside a tag or attribute), in <span translate="no">…</span>. DeepL,
+     * Microsoft and Google all leave translate="no" content unchanged in HTML
+     * mode; if an engine ignores it the term is simply translated as before, so
+     * nothing breaks. unwrapProtected() removes the markers after translation.
+     * Only meaningful for HTML format (plain-text mode would show the tags), so
+     * callers pass HTML only.
+     *
+     * @param array<string> $terms
+     */
+    private function protectTerms(string $html, array $terms): string
+    {
+        if ($terms === []) {
+            return $html;
+        }
+
+        // Longest first so a multi-word term wins over a substring of it.
+        usort($terms, static fn (string $a, string $b): int => mb_strlen($b) <=> mb_strlen($a));
+
+        $alternation = implode('|', array_map(static fn (string $t): string => preg_quote($t, '/'), $terms));
+        // Whole-word match (letters/digits either side block it), case-insensitive,
+        // Unicode-aware so umlauts count as letters.
+        $regex = '/(?<![\p{L}\p{N}])(' . $alternation . ')(?![\p{L}\p{N}])/iu';
+
+        // Walk the markup: skip <tags>, substitute only in the text between them.
+        $result = preg_replace_callback('/<[^>]*>|[^<]+/u', static function (array $match) use ($regex): string {
+            $segment = $match[0];
+
+            if ($segment !== '' && $segment[0] === '<') {
+                return $segment; // a tag - leave untouched
+            }
+
+            return preg_replace($regex, '<span translate="no">$1</span>', $segment) ?? $segment;
+        }, $html);
+
+        return $result ?? $html;
+    }
+
+    /** Remove the translate="no" wrappers added by protectTerms(), keeping the term. */
+    private function unwrapProtected(string $html): string
+    {
+        return preg_replace('#<span[^>]*\btranslate\s*=\s*(["\']?)no\1[^>]*>(.*?)</span>#isu', '$2', $html) ?? $html;
+    }
+
+    /**
+     * Drop cached translations whose source text contains any term that was just
+     * added to or removed from the glossary, so the change is reflected on the
+     * next view. Only affected entries are cleared - untouched notes keep their
+     * cached translation (and cost no fresh API call).
+     */
+    private function invalidateGlossaryCache(string $old, string $new): void
+    {
+        $terms = array_unique(array_merge($this->parseTerms($old), $this->parseTerms($new)));
+
+        foreach ($terms as $term) {
+            if ($term === '') {
+                continue;
+            }
+
+            $like = '%' . addcslashes($term, '\\%_') . '%';
+            DB::table(self::CACHE_TABLE)->where('source_text', 'like', $like)->delete();
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Per-page "do not translate" list. Stored as a JSON array of page keys
+    // (see pageKey() in translate-notes.js); the front-end decides whether the
+    // page it is on is excluded, so no record lookup is needed server-side.
+    // ---------------------------------------------------------------------
+
+    /**
+     * @return array<string>
+     */
+    private function noTranslatePages(): array
+    {
+        $decoded = json_decode($this->getPreference('no_translate_pages', ''), true);
+
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            array_map(static fn ($v): string => (string) $v, $decoded),
+            static fn (string $s): bool => $s !== ''
+        ));
+    }
+
+    /** @param array<string> $keys */
+    private function setNoTranslatePages(array $keys): void
+    {
+        $keys = array_values(array_unique(array_filter($keys, static fn (string $s): bool => $s !== '')));
+        $this->setPreference('no_translate_pages', json_encode($keys, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    // ---------------------------------------------------------------------
     // ModuleGlobalInterface - inject front-end assets into every page.
     // ---------------------------------------------------------------------
 
@@ -434,19 +563,22 @@ class TranslateNotesModule extends AbstractModule implements
         // are NOT already in the visitor's page language, so same-language notes
         // cost nothing. The engine still auto-detects the source of what it sends.
         $config = [
-            'endpoint'  => route('module', ['module' => $this->name(), 'action' => 'Translate']),
-            'target'    => strtoupper(I18N::languageTag()),
-            'selectors' => $this->noteSelectors(),
-            'csrf'      => Session::getCsrfToken(),
+            'endpoint'    => route('module', ['module' => $this->name(), 'action' => 'Translate']),
+            'target'      => strtoupper(I18N::languageTag()),
+            'selectors'   => $this->noteSelectors(),
+            'csrf'        => Session::getCsrfToken(),
+            // Pages the visitor should see untranslated (applies to everyone).
+            'noTranslate' => $this->noTranslatePages(),
         ];
 
         // Users at or above the configured role get inline edit/delete controls on
         // each translated note. The endpoints re-check the same permission
         // server-side, so this flag only decides whether to show the UI.
         if ($this->mayEditTranslations()) {
-            $config['canEdit']        = true;
-            $config['saveEndpoint']   = route('module', ['module' => $this->name(), 'action' => 'InlineSave']);
-            $config['deleteEndpoint'] = route('module', ['module' => $this->name(), 'action' => 'InlineDelete']);
+            $config['canEdit']            = true;
+            $config['saveEndpoint']       = route('module', ['module' => $this->name(), 'action' => 'InlineSave']);
+            $config['deleteEndpoint']     = route('module', ['module' => $this->name(), 'action' => 'InlineDelete']);
+            $config['pageToggleEndpoint'] = route('module', ['module' => $this->name(), 'action' => 'PageToggle']);
             // The controls show the active theme's own edit/delete icons; the text
             // is only a tooltip/aria-label. "Edit" and "Delete" are core webtrees
             // strings, so they are already translated without the module shipping
@@ -461,6 +593,11 @@ class TranslateNotesModule extends AbstractModule implements
                 'save'    => I18N::translate('save'),
                 'cancel'  => I18N::translate('cancel'),
                 'confirm' => I18N::translate('Remove this cached translation? It will be re-created the next time the note is viewed.'),
+                // Per-page "do not translate" controls.
+                'noTranslatePage' => I18N::translate('Do not translate this page'),
+                'pageConfirm'     => I18N::translate('Turn off translation for this whole page? Every note on it will show its original text.'),
+                'pageExcluded'    => I18N::translate('Translation is turned off for this page.'),
+                'enablePage'      => I18N::translate('Enable translation'),
             ];
         }
 
@@ -482,6 +619,11 @@ class TranslateNotesModule extends AbstractModule implements
         '.wt-tn-admin a{color:inherit;text-decoration:none;}' .
         '.wt-tn-admin a.wt-tn-delete{color:var(--bs-danger,#dc3545);}' .
         '.wt-tn-admin svg,.wt-tn-admin i{width:1em;height:1em;vertical-align:-.125em;}' .
+        '.wt-tn-pagebar{position:fixed;bottom:1rem;right:1rem;z-index:1050;max-width:22rem;' .
+        'background:var(--bs-body-bg,#fff);color:var(--bs-body-color,#212529);' .
+        'border:1px solid var(--bs-border-color,#ced4da);border-radius:.3rem;' .
+        'padding:.4rem .6rem;font-size:.85rem;box-shadow:0 .2rem .5rem rgba(0,0,0,.15);}' .
+        '.wt-tn-pagebar a{margin-left:.4rem;white-space:nowrap;}' .
         '</style>';
 
     /**
@@ -528,6 +670,8 @@ class TranslateNotesModule extends AbstractModule implements
             'note_selector'    => $this->getPreference('note_selector', self::DEFAULT_SELECTOR),
             'edit_levels'      => $this->editLevelOptions(),
             'edit_access_level' => $this->getPreference('edit_access_level', self::DEFAULT_EDIT_LEVEL),
+            'glossary_terms'   => $this->getPreference('glossary_terms', ''),
+            'no_translate_count' => count($this->noTranslatePages()),
             'usage'            => $this->engineUsage(),
             'cache_count'      => DB::table(self::CACHE_TABLE)->count(),
             'control_panel'    => route(ControlPanel::class),
@@ -548,6 +692,15 @@ class TranslateNotesModule extends AbstractModule implements
         $this->setPreference('microsoft_region', trim($body->string('microsoft_region', '')));
         $this->setPreference('mymemory_email', trim($body->string('mymemory_email', '')));
         $this->setPreference('note_selector', trim($body->string('note_selector', self::DEFAULT_SELECTOR)));
+
+        // Glossary: on change, clear only the cached translations that contain an
+        // affected term so the new protection takes effect without a full re-run.
+        $old_glossary = $this->getPreference('glossary_terms', '');
+        $new_glossary = trim($body->string('glossary_terms', ''));
+        $this->setPreference('glossary_terms', $new_glossary);
+        if ($new_glossary !== $old_glossary) {
+            $this->invalidateGlossaryCache($old_glossary, $new_glossary);
+        }
 
         // Only accept a known role key; fall back to the default otherwise.
         $edit_level = $body->string('edit_access_level', self::DEFAULT_EDIT_LEVEL);
@@ -673,17 +826,19 @@ class TranslateNotesModule extends AbstractModule implements
         $source     = $this->getPreference('source_lang', 'auto');
 
         try {
-            $result = $this->buildEngine($engine_key)->translate(
-                (string) $row->source_text,
+            $terms       = $format === 'html' ? $this->glossaryTerms() : [];
+            $result      = $this->buildEngine($engine_key)->translate(
+                $this->protectTerms((string) $row->source_text, $terms),
                 (string) ($row->target_lang ?? 'EN'),
                 $source,
                 $format
             );
+            $translation = $terms === [] ? $result['translation'] : $this->unwrapProtected($result['translation']);
 
             DB::table(self::CACHE_TABLE)
                 ->where('hash', '=', $hash)
                 ->update([
-                    'translation'   => $result['translation'],
+                    'translation'   => $translation,
                     'source_lang'   => $result['source'],
                     'translated_at' => date('Y-m-d H:i:s'),
                 ]);
@@ -760,7 +915,12 @@ class TranslateNotesModule extends AbstractModule implements
         }
 
         try {
-            $result = $this->buildEngine($engine_key)->translate($text, $target, $source, $format);
+            // Protect glossary terms (HTML only) so the engine leaves them as-is,
+            // then strip the markers from what it returns.
+            $terms       = $format === 'html' ? $this->glossaryTerms() : [];
+            $send_text   = $this->protectTerms($text, $terms);
+            $result      = $this->buildEngine($engine_key)->translate($send_text, $target, $source, $format);
+            $translation = $terms === [] ? $result['translation'] : $this->unwrapProtected($result['translation']);
 
             // Store the result. updateOrInsert avoids duplicate-key races.
             DB::table(self::CACHE_TABLE)->updateOrInsert(
@@ -770,14 +930,14 @@ class TranslateNotesModule extends AbstractModule implements
                     'target_lang'   => $target,
                     'format'        => $format,
                     'source_text'   => $text,
-                    'translation'   => $result['translation'],
+                    'translation'   => $translation,
                     'source_lang'   => $result['source'],
                     'translated_at' => date('Y-m-d H:i:s'),
                 ]
             );
 
             return response([
-                'translation' => $result['translation'],
+                'translation' => $translation,
                 'source'      => $result['source'],
                 'cached'      => false,
                 'hash'        => $hash,
@@ -832,5 +992,55 @@ class TranslateNotesModule extends AbstractModule implements
         }
 
         return response(['ok' => true]);
+    }
+
+    /**
+     * Add or remove the current page from the "do not translate" list. The
+     * front-end supplies the page key (see pageKey() in translate-notes.js) and
+     * translate=1 to re-enable or translate=0 to exclude. Same permission as the
+     * inline editing, re-checked server-side.
+     */
+    public function postPageToggleAction(ServerRequestInterface $request): ResponseInterface
+    {
+        if (!$this->mayEditTranslations($request)) {
+            return response(['error' => I18N::translate('Access denied.')], 403);
+        }
+
+        $body = Validator::parsedBody($request);
+        $page = trim($body->string('page', ''));
+
+        if ($page === '') {
+            return response(['error' => I18N::translate('No text to translate.')], 422);
+        }
+
+        $enable = $body->integer('translate', 0) === 1;
+        $pages  = $this->noTranslatePages();
+
+        if ($enable) {
+            $pages = array_values(array_filter($pages, static fn (string $p): bool => $p !== $page));
+        } elseif (!in_array($page, $pages, true)) {
+            $pages[] = $page;
+        }
+
+        $this->setNoTranslatePages($pages);
+
+        return response(['ok' => true, 'excluded' => !$enable]);
+    }
+
+    /** Clear the whole "do not translate" list. Admin only. */
+    public function postClearNoTranslateAction(ServerRequestInterface $request): ResponseInterface
+    {
+        if (!Auth::isAdmin()) {
+            return response('', 403);
+        }
+
+        $this->setNoTranslatePages([]);
+
+        FlashMessages::addMessage(
+            I18N::translate('Every page has been re-enabled for translation.'),
+            'success'
+        );
+
+        return redirect($this->getConfigLink());
     }
 }

@@ -20,6 +20,8 @@ use Fisharebest\Webtrees\I18N;
  * @var string               $note_selector
  * @var array<string,string> $edit_levels
  * @var string               $edit_access_level
+ * @var string               $glossary_terms
+ * @var int                  $no_translate_count
  * @var array<string,mixed>  $usage
  * @var int                  $cache_count
  * @var string               $control_panel
@@ -168,6 +170,16 @@ use Fisharebest\Webtrees\I18N;
     </div>
 
     <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="glossary_terms"><?= I18N::translate('Glossary — do not translate') ?></label>
+        <div class="col-sm-9">
+            <textarea class="form-control" id="glossary_terms" name="glossary_terms" rows="4"><?= e($glossary_terms) ?></textarea>
+            <div class="form-text">
+                <?= I18N::translate('Words that must never be translated — one per line (commas also separate). Useful for surnames and place names that would otherwise turn into ordinary words (for example “Taube” becoming “pigeon”, or “Koch” becoming “cook”). Matching is whole-word and case-insensitive; add each spelling you use (e.g. both “Taube” and “Tauben”). Changing this re-translates only the affected cached notes.') ?>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
         <label class="col-sm-3 col-form-label" for="edit_access_level">
             <?= I18N::translate('Who can edit or delete translations') ?>
         </label>
@@ -227,6 +239,26 @@ use Fisharebest\Webtrees\I18N;
         <?php else : ?>
             <p class="text-muted mb-0"><?= e($usage['reason'] ?? '') ?></p>
         <?php endif ?>
+    </div>
+</div>
+
+<hr>
+<h2 class="h5"><?= I18N::translate('Pages excluded from translation') ?></h2>
+
+<div class="row mb-3">
+    <div class="col-sm-3"><?= I18N::translate('Excluded pages') ?></div>
+    <div class="col-sm-9">
+        <p><?= I18N::number($no_translate_count) ?></p>
+        <div class="form-text mb-2">
+            <?= I18N::translate('Editors can turn translation off for a single record from the note’s edit box (“Do not translate this page”). Those pages always show their original text. This clears the whole list so every page is translated again.') ?>
+        </div>
+        <form method="post" action="<?= e(route('module', ['module' => $module, 'action' => 'ClearNoTranslate'])) ?>"
+              onsubmit="return confirm('<?= e(I18N::translate('Re-enable translation for every page?')) ?>');">
+            <?= csrf_field() ?>
+            <button type="submit" class="btn btn-outline-secondary" <?= $no_translate_count === 0 ? 'disabled' : '' ?>>
+                <?= I18N::translate('Re-enable all pages') ?>
+            </button>
+        </form>
     </div>
 </div>
 

@@ -29,6 +29,63 @@
         return String(tag || '').toLowerCase().split('-')[0];
     }
 
+    // A stable identifier for the current page, used by the "do not translate
+    // this page" feature. Prefer the record's tree + XREF (survives slug/name
+    // changes); fall back to the path for non-record pages.
+    function pageKey() {
+        let url = location.pathname + location.search;
+        try {
+            url = decodeURIComponent(url);
+        } catch (e) {
+            // malformed %-escape - fall back to the raw URL
+        }
+        const tree = (url.match(/\/tree\/([^/?#]+)/) || [])[1] || '';
+        const rec = url.match(/\/(individual|family|source|repository|note|media|submitter|location)\/([^/?#]+)/);
+
+        if (rec) {
+            return 't:' + tree + '/' + rec[1] + '/' + rec[2];
+        }
+        return 'p:' + location.pathname;
+    }
+
+    const noTranslate = (Array.isArray(cfg.noTranslate) ? cfg.noTranslate : []);
+    const currentPage = pageKey();
+    const pageExcluded = noTranslate.indexOf(currentPage) !== -1;
+
+    // Add (enable=false) or remove (enable=true) the current page from the
+    // server's "do not translate" list, then reload so the change is visible.
+    function setPageTranslation(enable) {
+        return post(cfg.pageToggleEndpoint, { page: currentPage, translate: enable ? 1 : 0 })
+            .then(function (d) {
+                if (d && d.ok) {
+                    location.reload();
+                }
+            })
+            .catch(function () {});
+    }
+
+    // On an excluded page, editors still get a small fixed banner to switch
+    // translation back on (nothing else on the page is touched).
+    function showPageBanner() {
+        const bar = document.createElement('div');
+        bar.className = 'wt-tn-pagebar';
+
+        const label = document.createElement('span');
+        label.textContent = cfg.i18n.pageExcluded;
+
+        const link = document.createElement('a');
+        link.href = '#';
+        link.textContent = cfg.i18n.enablePage;
+        link.addEventListener('click', function (e) {
+            e.preventDefault();
+            setPageTranslation(true);
+        });
+
+        bar.appendChild(label);
+        bar.appendChild(link);
+        (document.body || document.documentElement).appendChild(bar);
+    }
+
     // Does the note contain any real word worth sending to the engine, as
     // opposed to only numbers, dates, ids or punctuation (e.g. "1854-1888",
     // "23/5231!")? This is purely a cost gate to avoid calling the engine on a
@@ -212,6 +269,26 @@
 
         node.appendChild(save);
         node.appendChild(cancel);
+
+        // "Do not translate this page" - turns translation off for the whole
+        // record, not just this note (the note being edited is the natural place
+        // to offer it). Reloads afterwards so every note reverts to its original.
+        if (cfg.pageToggleEndpoint) {
+            const stop = document.createElement('button');
+            stop.type = 'button';
+            stop.className = 'btn btn-link btn-sm mt-2 text-danger';
+            stop.textContent = cfg.i18n.noTranslatePage;
+            node.appendChild(stop);
+
+            stop.addEventListener('click', function () {
+                if (!window.confirm(cfg.i18n.pageConfirm)) {
+                    return;
+                }
+                editor.destroy();
+                setPageTranslation(false);
+            });
+        }
+
         editor.focus();
 
         cancel.addEventListener('click', function () {
@@ -285,6 +362,19 @@
             }
             nodes.forEach(translateNode);
         });
+    }
+
+    // This page is on the "do not translate" list: leave every note as authored.
+    // Editors still get a banner to switch translation back on.
+    if (pageExcluded) {
+        if (cfg.canEdit && cfg.pageToggleEndpoint && cfg.i18n) {
+            if (document.body) {
+                showPageBanner();
+            } else {
+                document.addEventListener('DOMContentLoaded', showPageBanner);
+            }
+        }
+        return;
     }
 
     scan();

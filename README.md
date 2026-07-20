@@ -78,6 +78,33 @@ inspect the element in your browser's dev tools and add its selector on its own
 line. Each selector is queried independently, so a mistake in one line does not
 break the others, and per-note language detection still applies to every match.
 
+## Glossary — words that must never be translated
+
+Genealogy is full of surnames and place names that a translation engine will
+happily turn into ordinary words: **Taube** becomes "pigeon", **Koch** becomes
+"cook", **Jung** becomes "young". The **Glossary — do not translate** setting is
+a list of terms (one per line; commas also separate) that are protected from
+translation. Matching is whole-word and case-insensitive, so add each spelling
+you actually use (e.g. both `Taube` and `Tauben`).
+
+Protection is engine-agnostic: each occurrence is wrapped in
+`<span translate="no">…</span>` before the text is sent, which DeepL, Microsoft
+and Google all leave untouched in HTML mode; the wrapper is stripped again from
+the result. If an engine ignores the marker the term is simply translated as
+before — nothing breaks. Changing the glossary only re-translates the cached
+notes that actually contain an affected term, so it costs no extra quota for
+everything else.
+
+## Turning translation off for a page
+
+Sometimes a whole record should stay in its original language. While editing a
+translation (see below), an editor can choose **Do not translate this page** —
+from then on every note on that record shows its original text for all visitors.
+The page is remembered by its tree + record id, so it survives the record being
+renamed. On an excluded page, editors see a small **Enable translation** banner
+to switch it back on, and administrators can clear the whole list at once from
+the settings page (**Pages excluded from translation → Re-enable all pages**).
+
 ## Managing the cache
 
 **Inline, on the front-end:** each translated note shows small **edit** /
