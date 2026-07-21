@@ -127,7 +127,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.20.0';
+        return '0.21.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -579,9 +579,11 @@ class TranslateNotesModule extends AbstractModule implements
             $config['saveEndpoint']       = route('module', ['module' => $this->name(), 'action' => 'InlineSave']);
             $config['deleteEndpoint']     = route('module', ['module' => $this->name(), 'action' => 'InlineDelete']);
             $config['pageToggleEndpoint'] = route('module', ['module' => $this->name(), 'action' => 'PageToggle']);
-            $config['glossaryEndpoint']   = route('module', ['module' => $this->name(), 'action' => 'GlossarySave']);
-            // Current glossary text, so the inline editor can prefill it.
-            $config['glossary']           = $this->getPreference('glossary_terms', '');
+            $config['glossaryEndpoint']     = route('module', ['module' => $this->name(), 'action' => 'GlossarySave']);
+            // The editor loads the glossary text fresh when it opens (see
+            // GlossaryLoad), so the value is never stale and is not embedded in
+            // every page.
+            $config['glossaryLoadEndpoint'] = route('module', ['module' => $this->name(), 'action' => 'GlossaryLoad']);
             // The controls show the active theme's own edit/delete icons; the text
             // is only a tooltip/aria-label. "Edit" and "Delete" are core webtrees
             // strings, so they are already translated without the module shipping
@@ -605,6 +607,8 @@ class TranslateNotesModule extends AbstractModule implements
                 // Inline glossary editor.
                 'glossary'     => I18N::translate('Edit glossary'),
                 'glossaryHint' => I18N::translate('Words that must never be translated — one per line (for example a surname like “Taube” that would otherwise become “pigeon”).'),
+                'loading'      => I18N::translate('Loading…'),
+                'loadError'    => I18N::translate('Could not load the glossary.'),
             ];
         }
 
@@ -1037,6 +1041,16 @@ class TranslateNotesModule extends AbstractModule implements
         $this->setNoTranslatePages($pages);
 
         return response(['ok' => true, 'excluded' => !$enable]);
+    }
+
+    /** Return the current glossary text for the front-end inline editor. */
+    public function getGlossaryLoadAction(ServerRequestInterface $request): ResponseInterface
+    {
+        if (!$this->mayEditTranslations($request)) {
+            return response(['error' => I18N::translate('Access denied.')], 403);
+        }
+
+        return response(['glossary' => $this->getPreference('glossary_terms', '')]);
     }
 
     /**

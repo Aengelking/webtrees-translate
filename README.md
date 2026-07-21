@@ -98,8 +98,10 @@ everything else.
 The glossary can be edited two ways: in the admin settings, or **inline on the
 front-end** — every translated note shows a small **glossary** button next to
 its edit/delete controls, so when you spot a term being mistranslated you can
-add it on the spot. The inline editor is available to the same users as the
-edit/delete controls, and saving it re-translates the affected notes right away.
+add it on the spot. The inline editor loads the current list fresh from the
+server when it opens (so it is never stale and cannot overwrite a newer
+version), is available to the same users as the edit/delete controls, and saving
+it re-translates the affected notes right away.
 
 ## Turning translation off for a page
 

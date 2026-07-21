@@ -140,6 +140,14 @@
         }).then(function (response) { return response.json(); });
     }
 
+    function getJson(endpoint) {
+        return fetch(endpoint, {
+            method: 'GET',
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        }).then(function (response) { return response.json(); });
+    }
+
     // Show the translated markup and, for admins, the edit/delete controls.
     function showTranslation(node, translationHtml, hash, original) {
         node.innerHTML = sanitizeHtml(translationHtml);
@@ -223,16 +231,20 @@
         const area = document.createElement('textarea');
         area.className = 'form-control form-control-sm';
         area.rows = 8;
-        area.value = cfg.glossary || '';
+        // Load the current glossary fresh from the server so it is never stale
+        // and cannot overwrite a newer version. Disabled until it arrives.
+        area.value = '';
+        area.disabled = true;
 
         const hint = document.createElement('div');
         hint.className = 'form-text';
-        hint.textContent = cfg.i18n.glossaryHint;
+        hint.textContent = cfg.i18n.loading;
 
         const save = document.createElement('button');
         save.type = 'button';
         save.className = 'btn btn-primary btn-sm mt-2 me-2';
         save.textContent = cfg.i18n.save;
+        save.disabled = true; // enabled only once the glossary has loaded
 
         const cancel = document.createElement('button');
         cancel.type = 'button';
@@ -246,12 +258,26 @@
 
         cancel.addEventListener('click', close);
 
+        getJson(cfg.glossaryLoadEndpoint).then(function (d) {
+            if (d && typeof d.glossary === 'string') {
+                area.value = d.glossary;
+                area.disabled = false;
+                save.disabled = false;
+                hint.textContent = cfg.i18n.glossaryHint;
+                area.focus();
+            } else {
+                // Keep save disabled so a failed load can't clobber the glossary.
+                hint.textContent = (d && d.error) ? d.error : cfg.i18n.loadError;
+            }
+        }).catch(function () {
+            hint.textContent = cfg.i18n.loadError;
+        });
+
         save.addEventListener('click', function () {
             save.disabled = true;
             post(cfg.glossaryEndpoint, { glossary: area.value }).then(function (d) {
                 if (d && d.ok) {
-                    cfg.glossary = d.glossary; // keep in sync in case reload is blocked
-                    location.reload();         // re-translate affected notes
+                    location.reload(); // re-translate affected notes
                 } else {
                     save.disabled = false;
                     if (d && d.error) { window.alert(d.error); }
@@ -267,7 +293,6 @@
         panel.appendChild(save);
         panel.appendChild(cancel);
         (document.body || document.documentElement).appendChild(panel);
-        area.focus();
     }
 
     // Turn a textarea into a rich-text editor by reusing the CKEditor that
