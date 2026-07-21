@@ -127,7 +127,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.19.0';
+        return '0.20.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -579,13 +579,17 @@ class TranslateNotesModule extends AbstractModule implements
             $config['saveEndpoint']       = route('module', ['module' => $this->name(), 'action' => 'InlineSave']);
             $config['deleteEndpoint']     = route('module', ['module' => $this->name(), 'action' => 'InlineDelete']);
             $config['pageToggleEndpoint'] = route('module', ['module' => $this->name(), 'action' => 'PageToggle']);
+            $config['glossaryEndpoint']   = route('module', ['module' => $this->name(), 'action' => 'GlossarySave']);
+            // Current glossary text, so the inline editor can prefill it.
+            $config['glossary']           = $this->getPreference('glossary_terms', '');
             // The controls show the active theme's own edit/delete icons; the text
             // is only a tooltip/aria-label. "Edit" and "Delete" are core webtrees
             // strings, so they are already translated without the module shipping
             // any translation files.
             $config['icons'] = [
-                'edit' => $this->iconHtml('icons/edit', '&#9998;'),   // ✎ fallback
-                'del'  => $this->iconHtml('icons/delete', '&#128465;'), // 🗑 fallback
+                'edit'     => $this->iconHtml('icons/edit', '&#9998;'),       // ✎ fallback
+                'del'      => $this->iconHtml('icons/delete', '&#128465;'),   // 🗑 fallback
+                'glossary' => $this->iconHtml('icons/preferences', '&#128214;'), // 📖 fallback
             ];
             $config['i18n'] = [
                 'edit'    => I18N::translate('Edit'),
@@ -598,6 +602,9 @@ class TranslateNotesModule extends AbstractModule implements
                 'pageConfirm'     => I18N::translate('Turn off translation for this whole page? Every note on it will show its original text.'),
                 'pageExcluded'    => I18N::translate('Translation is turned off for this page.'),
                 'enablePage'      => I18N::translate('Enable translation'),
+                // Inline glossary editor.
+                'glossary'     => I18N::translate('Edit glossary'),
+                'glossaryHint' => I18N::translate('Words that must never be translated — one per line (for example a surname like “Taube” that would otherwise become “pigeon”).'),
             ];
         }
 
@@ -624,6 +631,11 @@ class TranslateNotesModule extends AbstractModule implements
         'border:1px solid var(--bs-border-color,#ced4da);border-radius:.3rem;' .
         'padding:.4rem .6rem;font-size:.85rem;box-shadow:0 .2rem .5rem rgba(0,0,0,.15);}' .
         '.wt-tn-pagebar a{margin-left:.4rem;white-space:nowrap;}' .
+        '.wt-tn-glossary-panel{position:fixed;bottom:1rem;right:1rem;z-index:1060;width:24rem;' .
+        'max-width:calc(100vw - 2rem);background:var(--bs-body-bg,#fff);color:var(--bs-body-color,#212529);' .
+        'border:1px solid var(--bs-border-color,#ced4da);border-radius:.3rem;padding:.6rem .7rem;' .
+        'box-shadow:0 .3rem .8rem rgba(0,0,0,.2);}' .
+        '.wt-tn-glossary-panel .wt-tn-glossary-title{font-weight:600;margin-bottom:.3rem;}' .
         '</style>';
 
     /**
@@ -1025,6 +1037,29 @@ class TranslateNotesModule extends AbstractModule implements
         $this->setNoTranslatePages($pages);
 
         return response(['ok' => true, 'excluded' => !$enable]);
+    }
+
+    /**
+     * Save the glossary from the front-end inline editor. Same permission as the
+     * other inline actions; on change it re-translates only the affected cached
+     * notes, exactly like the admin settings form.
+     */
+    public function postGlossarySaveAction(ServerRequestInterface $request): ResponseInterface
+    {
+        if (!$this->mayEditTranslations($request)) {
+            return response(['error' => I18N::translate('Access denied.')], 403);
+        }
+
+        $old = $this->getPreference('glossary_terms', '');
+        $new = trim(Validator::parsedBody($request)->string('glossary', ''));
+
+        $this->setPreference('glossary_terms', $new);
+
+        if ($new !== $old) {
+            $this->invalidateGlossaryCache($old, $new);
+        }
+
+        return response(['ok' => true, 'glossary' => $new]);
     }
 
     /** Clear the whole "do not translate" list. Admin only. */

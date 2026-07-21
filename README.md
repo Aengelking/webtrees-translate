@@ -95,6 +95,12 @@ before — nothing breaks. Changing the glossary only re-translates the cached
 notes that actually contain an affected term, so it costs no extra quota for
 everything else.
 
+The glossary can be edited two ways: in the admin settings, or **inline on the
+front-end** — every translated note shows a small **glossary** button next to
+its edit/delete controls, so when you spot a term being mistranslated you can
+add it on the spot. The inline editor is available to the same users as the
+edit/delete controls, and saving it re-translates the affected notes right away.
+
 ## Turning translation off for a page
 
 Sometimes a whole record should stay in its original language. While editing a

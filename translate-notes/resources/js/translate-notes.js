@@ -192,7 +192,82 @@
 
         bar.appendChild(edit);
         bar.appendChild(del);
+
+        // Third control: edit the (global) glossary of protected terms, right
+        // where a bad translation is noticed. Available to the same users.
+        if (cfg.glossaryEndpoint) {
+            bar.appendChild(iconLink('wt-tn-glossary', icons.glossary, cfg.i18n.glossary, openGlossaryEditor));
+        }
+
         return bar;
+    }
+
+    // A small fixed panel to edit the glossary inline. It is global (not tied to
+    // this note), so on save we reload the page to re-translate with the new
+    // terms. Only one panel at a time.
+    let glossaryOpen = false;
+
+    function openGlossaryEditor() {
+        if (glossaryOpen) {
+            return;
+        }
+        glossaryOpen = true;
+
+        const panel = document.createElement('div');
+        panel.className = 'wt-tn-glossary-panel';
+
+        const title = document.createElement('div');
+        title.className = 'wt-tn-glossary-title';
+        title.textContent = cfg.i18n.glossary;
+
+        const area = document.createElement('textarea');
+        area.className = 'form-control form-control-sm';
+        area.rows = 8;
+        area.value = cfg.glossary || '';
+
+        const hint = document.createElement('div');
+        hint.className = 'form-text';
+        hint.textContent = cfg.i18n.glossaryHint;
+
+        const save = document.createElement('button');
+        save.type = 'button';
+        save.className = 'btn btn-primary btn-sm mt-2 me-2';
+        save.textContent = cfg.i18n.save;
+
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'btn btn-link btn-sm mt-2';
+        cancel.textContent = cfg.i18n.cancel;
+
+        function close() {
+            glossaryOpen = false;
+            panel.remove();
+        }
+
+        cancel.addEventListener('click', close);
+
+        save.addEventListener('click', function () {
+            save.disabled = true;
+            post(cfg.glossaryEndpoint, { glossary: area.value }).then(function (d) {
+                if (d && d.ok) {
+                    cfg.glossary = d.glossary; // keep in sync in case reload is blocked
+                    location.reload();         // re-translate affected notes
+                } else {
+                    save.disabled = false;
+                    if (d && d.error) { window.alert(d.error); }
+                }
+            }).catch(function () {
+                save.disabled = false;
+            });
+        });
+
+        panel.appendChild(title);
+        panel.appendChild(area);
+        panel.appendChild(hint);
+        panel.appendChild(save);
+        panel.appendChild(cancel);
+        (document.body || document.documentElement).appendChild(panel);
+        area.focus();
     }
 
     // Turn a textarea into a rich-text editor by reusing the CKEditor that
