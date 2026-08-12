@@ -64,9 +64,14 @@ so the page says so instead.
   that turns out to already be in that language), where the classifier could
   sometimes skip it for free. Because results are cached per note and language,
   this is a one-time cost per note — later views are free.
-- Results are cached in a `translate_notes_cache` table
-  (`sha256(engine | source | target | format | text)`), so the first view of a
-  note in a given language costs one API call and later views are free.
+- Results are cached in a `translate_notes_cache` table under an
+  **engine-independent** key (`sha256(source | target | format | text)`), so the
+  first view of a note in a given language costs one API call and later views are
+  free. Because the engine is **not** part of the key, switching the translation
+  engine reuses the existing translations instead of re-translating everything —
+  only notes that have never been translated into that language use the new
+  engine. (Upgrading to this scheme re-keys the existing cache in place, so the
+  upgrade itself translates nothing.)
 
 ## Which text gets translated
 

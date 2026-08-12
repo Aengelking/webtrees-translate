@@ -88,8 +88,8 @@ class TranslateNotesModule extends AbstractModule implements
     // Entries per page in the admin cache manager.
     private const CACHE_PER_PAGE = 25;
 
-    // Bump when the cache table layout changes.
-    private const SCHEMA_VERSION = 3;
+    // Bump when the cache table layout OR the cache-key formula changes.
+    private const SCHEMA_VERSION = 4;
 
     // Available engines, in the order shown in the admin dropdown.
     private const ENGINES = [
@@ -127,7 +127,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.21.0';
+        return '0.22.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -175,23 +175,21 @@ class TranslateNotesModule extends AbstractModule implements
             $connection->commit();
         }
 
-        try {
-            // The cache key now folds in engine + source + target, so any older
-            // table layout is obsolete. The cache is disposable - recreate it.
-            $schema->dropIfExists(self::CACHE_TABLE);
+        $installed = (int) $this->getPreference('schema_version', '0');
 
-            $schema->create(self::CACHE_TABLE, static function (Blueprint $table): void {
-                $table->string('hash', 64)->primary();  // sha256(engine|source|target|format|text)
-                // Denormalised so the admin cache manager can show, edit and
-                // re-translate each entry without re-deriving it from the hash.
-                $table->string('engine', 20)->nullable();
-                $table->string('target_lang', 12)->nullable();
-                $table->string('format', 8)->nullable();
-                $table->text('source_text')->nullable();
-                $table->text('translation');
-                $table->string('source_lang', 12)->nullable();
-                $table->timestamp('translated_at')->nullable();
-            });
+        try {
+            if ($installed >= 3 && $schema->hasTable(self::CACHE_TABLE)) {
+                // v3 -> v4: the cache key no longer includes the engine, so a
+                // stored translation is reused whatever engine is now selected.
+                // Re-key the existing rows in place rather than dropping them, so
+                // this upgrade (and every future engine switch) does NOT
+                // re-translate everything.
+                $this->rekeyCacheEngineIndependent($schema);
+            } else {
+                // Fresh install, or a pre-v3 layout we cannot migrate - (re)create.
+                $schema->dropIfExists(self::CACHE_TABLE);
+                $this->createCacheTable($schema);
+            }
         } finally {
             // Re-open a transaction for webtrees' middleware to commit, even if
             // the DDL above failed.
@@ -204,6 +202,72 @@ class TranslateNotesModule extends AbstractModule implements
         }
 
         $this->setPreference('schema_version', (string) self::SCHEMA_VERSION);
+    }
+
+    /** Create the cache table with the current layout. */
+    private function createCacheTable($schema): void
+    {
+        $schema->create(self::CACHE_TABLE, static function (Blueprint $table): void {
+            $table->string('hash', 64)->primary();  // sha256(source|target|format|text) - engine-independent
+            // Denormalised so the admin cache manager can show, edit and
+            // re-translate each entry without re-deriving it from the hash.
+            $table->string('engine', 20)->nullable();
+            $table->string('target_lang', 12)->nullable();
+            $table->string('format', 8)->nullable();
+            $table->text('source_text')->nullable();
+            $table->text('translation');
+            $table->string('source_lang', 12)->nullable();
+            $table->timestamp('translated_at')->nullable();
+        });
+    }
+
+    /**
+     * Rebuild the cache with engine-independent keys, preserving every stored
+     * translation. Each row is re-keyed as sha256(source|target|format|text);
+     * where two rows (e.g. one per engine) collapse to the same key, the most
+     * recently translated one wins. Rows without their source text cannot be
+     * re-keyed and are dropped (they re-translate on demand).
+     */
+    private function rekeyCacheEngineIndependent($schema): void
+    {
+        $source = $this->getPreference('source_lang', 'auto');
+        $rows   = DB::table(self::CACHE_TABLE)->get();
+
+        $deduped = [];
+
+        foreach ($rows as $row) {
+            $text = (string) ($row->source_text ?? '');
+
+            if ($text === '') {
+                continue;
+            }
+
+            $format = (string) ($row->format ?? 'text') === 'html' ? 'html' : 'text';
+            $target = (string) ($row->target_lang ?? '');
+            $key    = hash('sha256', $source . '|' . $target . '|' . $format . '|' . $text);
+
+            $prev = $deduped[$key] ?? null;
+
+            if ($prev === null || (string) ($row->translated_at ?? '') >= (string) ($prev['translated_at'] ?? '')) {
+                $deduped[$key] = [
+                    'hash'          => $key,
+                    'engine'        => $row->engine ?? null,
+                    'target_lang'   => $target,
+                    'format'        => $format,
+                    'source_text'   => $text,
+                    'translation'   => (string) ($row->translation ?? ''),
+                    'source_lang'   => $row->source_lang ?? null,
+                    'translated_at' => $row->translated_at ?? null,
+                ];
+            }
+        }
+
+        $schema->dropIfExists(self::CACHE_TABLE);
+        $this->createCacheTable($schema);
+
+        foreach (array_chunk(array_values($deduped), 200) as $chunk) {
+            DB::table(self::CACHE_TABLE)->insert($chunk);
+        }
     }
 
     /**
@@ -915,9 +979,11 @@ class TranslateNotesModule extends AbstractModule implements
         $engine_key = $this->getPreference('engine', self::DEFAULT_ENGINE);
         $source     = $this->getPreference('source_lang', 'auto');
 
-        // Cache key folds in engine + source + target + format so switching any of
-        // them produces a fresh translation rather than a stale hit.
-        $hash = hash('sha256', $engine_key . '|' . $source . '|' . $target . '|' . $format . '|' . $text);
+        // Cache key is ENGINE-INDEPENDENT: a translation of the same text into the
+        // same language is reused whatever engine is selected, so switching the
+        // engine does not re-translate everything. It still folds in
+        // source + target + format so those changes produce a fresh entry.
+        $hash = hash('sha256', $source . '|' . $target . '|' . $format . '|' . $text);
 
         $cached = DB::table(self::CACHE_TABLE)->where('hash', '=', $hash)->first();
 
