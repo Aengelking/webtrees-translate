@@ -127,7 +127,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.22.1';
+        return '0.23.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -964,6 +964,21 @@ class TranslateNotesModule extends AbstractModule implements
     // Reached via POST /module/<name>/Translate
     // ---------------------------------------------------------------------
 
+    /** Primary language subtag, lower-cased and region-stripped: "EN-US" -> "en". */
+    private function primaryLang(string $tag): string
+    {
+        $tag = strtolower(trim($tag));
+
+        foreach (['-', '_'] as $separator) {
+            $pos = strpos($tag, $separator);
+            if ($pos !== false) {
+                $tag = substr($tag, 0, $pos);
+            }
+        }
+
+        return $tag;
+    }
+
     public function postTranslateAction(ServerRequestInterface $request): ResponseInterface
     {
         $text   = Validator::parsedBody($request)->string('text', '');
@@ -1001,6 +1016,45 @@ class TranslateNotesModule extends AbstractModule implements
             ]);
         }
 
+        $primary_target = $this->primaryLang($target);
+
+        // Same-language short-circuit. webtrees' page language can carry a region
+        // (e.g. "EN-US") while the engine detects only the base language ("EN"),
+        // so an English note on the English site would be pointlessly "translated"
+        // EN -> EN-US. If we have translated this exact text before we already know
+        // its source language; when that matches the page language (ignoring
+        // region) the note is already in the page's language - keep the original
+        // and make NO API call. A no-op entry is cached so later views are free.
+        $knownSource = '';
+        foreach (DB::table(self::CACHE_TABLE)->where('source_text', '=', $text)->get() as $seen) {
+            if ((string) ($seen->source_lang ?? '') !== '') {
+                $knownSource = (string) $seen->source_lang;
+                break;
+            }
+        }
+
+        if ($knownSource !== '' && $this->primaryLang($knownSource) === $primary_target) {
+            DB::table(self::CACHE_TABLE)->updateOrInsert(
+                ['hash' => $hash],
+                [
+                    'engine'        => $engine_key,
+                    'target_lang'   => $target,
+                    'format'        => $format,
+                    'source_text'   => $text,
+                    'translation'   => $text,
+                    'source_lang'   => $knownSource,
+                    'translated_at' => date('Y-m-d H:i:s'),
+                ]
+            );
+
+            return response([
+                'translation' => $text,
+                'source'      => $knownSource,
+                'cached'      => false,
+                'hash'        => $hash,
+            ]);
+        }
+
         try {
             // Protect glossary terms (HTML only) so the engine leaves them as-is,
             // then strip the markers from what it returns.
@@ -1008,6 +1062,13 @@ class TranslateNotesModule extends AbstractModule implements
             $send_text   = $this->protectTerms($text, $terms);
             $result      = $this->buildEngine($engine_key)->translate($send_text, $target, $source, $format);
             $translation = $terms === [] ? $result['translation'] : $this->unwrapProtected($result['translation']);
+
+            // The engine detected the note is already in the page's language (only
+            // the region differs, e.g. EN vs EN-US): keep the ORIGINAL rather than
+            // a reworded same-language "translation".
+            if ($this->primaryLang((string) $result['source']) === $primary_target) {
+                $translation = $text;
+            }
 
             // Store the result. updateOrInsert avoids duplicate-key races.
             DB::table(self::CACHE_TABLE)->updateOrInsert(

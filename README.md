@@ -59,6 +59,12 @@ so the page says so instead.
   no edit controls). The only notes never sent are those with no real words —
   pure numbers, dates or ids — which nothing could translate. The translated
   markup is sanitized before it replaces the note.
+- **Region-insensitive.** webtrees' page language may carry a region (e.g.
+  `EN-US`) while an engine reports only the base language (`EN`). Languages are
+  compared by their primary subtag, so an English note on an `EN-US` page counts
+  as already-in-language: the original is kept, not a reworded `EN → EN-US`
+  version. And once a note's source language is known (from any earlier
+  translation), later same-language views are served without any API call at all.
 - The trade-off of removing the classifier is cost: the **first** view of each
   note in a given language now always costs one engine call (even for a note
   that turns out to already be in that language), where the classifier could
