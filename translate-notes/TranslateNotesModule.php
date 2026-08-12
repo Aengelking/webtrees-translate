@@ -127,7 +127,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.22.0';
+        return '0.22.1';
     }
 
     public function customModuleSupportUrl(): string
@@ -168,32 +168,35 @@ class TranslateNotesModule extends AbstractModule implements
             return;
         }
 
-        $schema     = DB::schema();
-        $connection = $schema->getConnection();
-
-        if ($connection->transactionLevel() > 0) {
-            $connection->commit();
-        }
-
+        $schema    = DB::schema();
         $installed = (int) $this->getPreference('schema_version', '0');
 
-        try {
-            if ($installed >= 3 && $schema->hasTable(self::CACHE_TABLE)) {
-                // v3 -> v4: the cache key no longer includes the engine, so a
-                // stored translation is reused whatever engine is now selected.
-                // Re-key the existing rows in place rather than dropping them, so
-                // this upgrade (and every future engine switch) does NOT
-                // re-translate everything.
-                $this->rekeyCacheEngineIndependent($schema);
-            } else {
-                // Fresh install, or a pre-v3 layout we cannot migrate - (re)create.
+        if ($installed >= 3 && $schema->hasTable(self::CACHE_TABLE)) {
+            // v3 -> v4: only the cache-KEY formula changed (engine dropped); the
+            // columns are unchanged. So re-key the existing rows in place with
+            // plain DELETE + INSERT - no CREATE/DROP TABLE. This is transaction-
+            // safe (no DDL implicit-commit), keeps every translation, and means
+            // this upgrade (and every future engine switch) re-translates nothing.
+            $this->rekeyCacheEngineIndependent();
+        } else {
+            // Fresh install, or a pre-v3 layout we cannot migrate: (re)create the
+            // table. CREATE/DROP TABLE implicitly COMMIT on MySQL/MariaDB, which
+            // would silently end webtrees' per-request transaction and later cause
+            // "There is no active transaction". Guard it by closing the current
+            // transaction and opening a fresh one around the DDL, through the
+            // Illuminate connection so its transaction counter stays consistent.
+            $connection = $schema->getConnection();
+
+            if ($connection->transactionLevel() > 0) {
+                $connection->commit();
+            }
+
+            try {
                 $schema->dropIfExists(self::CACHE_TABLE);
                 $this->createCacheTable($schema);
+            } finally {
+                $connection->beginTransaction();
             }
-        } finally {
-            // Re-open a transaction for webtrees' middleware to commit, even if
-            // the DDL above failed.
-            $connection->beginTransaction();
         }
 
         // Preserve the DeepL setup from earlier (0.1/0.2) installs.
@@ -222,13 +225,14 @@ class TranslateNotesModule extends AbstractModule implements
     }
 
     /**
-     * Rebuild the cache with engine-independent keys, preserving every stored
+     * Re-key the cache with engine-independent keys, preserving every stored
      * translation. Each row is re-keyed as sha256(source|target|format|text);
      * where two rows (e.g. one per engine) collapse to the same key, the most
      * recently translated one wins. Rows without their source text cannot be
-     * re-keyed and are dropped (they re-translate on demand).
+     * re-keyed and are dropped (they re-translate on demand). Uses DELETE +
+     * INSERT only - the table structure is unchanged, so no DDL is needed.
      */
-    private function rekeyCacheEngineIndependent($schema): void
+    private function rekeyCacheEngineIndependent(): void
     {
         $source = $this->getPreference('source_lang', 'auto');
         $rows   = DB::table(self::CACHE_TABLE)->get();
@@ -262,8 +266,9 @@ class TranslateNotesModule extends AbstractModule implements
             }
         }
 
-        $schema->dropIfExists(self::CACHE_TABLE);
-        $this->createCacheTable($schema);
+        // Replace the contents in place (no DDL): empty the table, then re-insert
+        // the rows under their new keys.
+        DB::table(self::CACHE_TABLE)->delete();
 
         foreach (array_chunk(array_values($deduped), 200) as $chunk) {
             DB::table(self::CACHE_TABLE)->insert($chunk);
