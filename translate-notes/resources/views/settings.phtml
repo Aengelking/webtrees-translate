@@ -23,6 +23,7 @@ use Fisharebest\Webtrees\I18N;
  * @var string               $glossary_terms
  * @var int                  $no_translate_count
  * @var array<string,mixed>  $usage
+ * @var array<string,int>    $usage_month
  * @var int                  $cache_count
  * @var string               $control_panel
  */
@@ -239,6 +240,31 @@ use Fisharebest\Webtrees\I18N;
         <?php else : ?>
             <p class="text-muted mb-0"><?= e($usage['reason'] ?? '') ?></p>
         <?php endif ?>
+    </div>
+</div>
+
+<div class="row mb-3">
+    <div class="col-sm-3"><?= I18N::translate('Characters translated') ?></div>
+    <div class="col-sm-9">
+        <?php $this_month = date('Y-m'); ?>
+        <p class="mb-1">
+            <strong><?= I18N::number((int) ($usage_month[$this_month] ?? 0)) ?></strong>
+            <?= I18N::translate('characters sent to the engine this month (%s)', $this_month) ?>
+        </p>
+        <?php if (count(array_diff_key($usage_month, [$this_month => 0])) > 0) : ?>
+            <details>
+                <summary class="small text-muted"><?= I18N::translate('Previous months') ?></summary>
+                <ul class="small mb-0 mt-1">
+                    <?php foreach ($usage_month as $month => $chars) : ?>
+                        <?php if ($month === $this_month) { continue; } ?>
+                        <li><?= e($month) ?>: <?= I18N::number((int) $chars) ?></li>
+                    <?php endforeach ?>
+                </ul>
+            </details>
+        <?php endif ?>
+        <div class="form-text">
+            <?= I18N::translate('This server’s own estimate of characters sent to the translation engine (works for any engine, including Microsoft). It counts only real API calls — cache hits and same-language notes are not counted — so it is a usage guide, not the provider’s exact bill.') ?>
+        </div>
     </div>
 </div>
 

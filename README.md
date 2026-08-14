@@ -31,6 +31,13 @@ characters** in your DeepL allowance (used / limit, with a progress bar), read
 live from DeepL's usage endpoint. The other engines do not report a live quota,
 so the page says so instead.
 
+For **every** engine (including Microsoft, which exposes no usage API at all),
+the settings page also shows a **module-side character counter**: the number of
+characters this install has sent to the engine in the current calendar month,
+with previous months available underneath. It counts only real API calls — cache
+hits and same-language notes are not counted — so it is a usage guide rather than
+the provider's exact bill, but it gives visibility where the provider gives none.
+
 ## Install
 
 1. Copy the [`translate-notes`](translate-notes/) folder into your webtrees

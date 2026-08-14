@@ -127,7 +127,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.23.0';
+        return '0.24.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -758,6 +758,7 @@ class TranslateNotesModule extends AbstractModule implements
             'glossary_terms'   => $this->getPreference('glossary_terms', ''),
             'no_translate_count' => count($this->noTranslatePages()),
             'usage'            => $this->engineUsage(),
+            'usage_month'      => $this->usageByMonth(),
             'cache_count'      => DB::table(self::CACHE_TABLE)->count(),
             'control_panel'    => route(ControlPanel::class),
         ]);
@@ -928,6 +929,8 @@ class TranslateNotesModule extends AbstractModule implements
                     'translated_at' => date('Y-m-d H:i:s'),
                 ]);
 
+            $this->recordUsage(mb_strlen((string) $row->source_text));
+
             FlashMessages::addMessage(I18N::translate('The entry has been re-translated.'), 'success');
         } catch (\Throwable $exception) {
             FlashMessages::addMessage($exception->getMessage(), 'danger');
@@ -963,6 +966,48 @@ class TranslateNotesModule extends AbstractModule implements
     // Translation endpoint - server-side DeepL proxy (keeps the key secret).
     // Reached via POST /module/<name>/Translate
     // ---------------------------------------------------------------------
+
+    /**
+     * Add to this server's own running estimate of characters sent to the engine,
+     * bucketed by calendar month. Works for every engine (unlike the live DeepL
+     * usage endpoint). Only real API calls are recorded here - cache hits and
+     * same-language skips make no call and are not counted.
+     */
+    private function recordUsage(int $chars): void
+    {
+        if ($chars <= 0) {
+            return;
+        }
+
+        $by_month          = $this->usageByMonth();
+        $month             = date('Y-m');
+        $by_month[$month]  = ($by_month[$month] ?? 0) + $chars;
+
+        krsort($by_month);
+        $by_month = array_slice($by_month, 0, 12, true); // keep the last 12 months
+
+        $this->setPreference('usage_by_month', json_encode($by_month));
+    }
+
+    /**
+     * @return array<string,int> month "YYYY-MM" => characters sent, newest first
+     */
+    private function usageByMonth(): array
+    {
+        $decoded = json_decode($this->getPreference('usage_by_month', ''), true);
+
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($decoded as $month => $count) {
+            $out[(string) $month] = (int) $count;
+        }
+        krsort($out);
+
+        return $out;
+    }
 
     /** Primary language subtag, lower-cased and region-stripped: "EN-US" -> "en". */
     private function primaryLang(string $tag): string
@@ -1083,6 +1128,9 @@ class TranslateNotesModule extends AbstractModule implements
                     'translated_at' => date('Y-m-d H:i:s'),
                 ]
             );
+
+            // Count this call toward the module's own monthly usage estimate.
+            $this->recordUsage(mb_strlen($text));
 
             return response([
                 'translation' => $translation,
