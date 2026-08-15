@@ -428,6 +428,13 @@
             return;
         }
 
+        // Skip a block that is far too large to be a single note: it is almost
+        // always a whole page region caught by an over-broad selector, and it
+        // wastes a lot of characters. Configurable; 0 disables the limit.
+        if (cfg.maxChars > 0 && text.length > cfg.maxChars) {
+            return;
+        }
+
         const pageLang = primary(cfg.target);
         const original = node.innerHTML;
 

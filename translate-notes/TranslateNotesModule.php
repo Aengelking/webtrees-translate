@@ -95,6 +95,12 @@ class TranslateNotesModule extends AbstractModule implements
     // every other fact value on the page. Override in settings if your theme differs.
     private const DEFAULT_SELECTOR = '.wt-tab-notes .wt-fact-value';
 
+    // A matched element whose visible text is longer than this is almost never a
+    // single note - it is a whole page region caught by an over-broad selector
+    // (a recent-changes block, a full facts panel, a message list). Sending those
+    // wastes a lot of characters, so they are skipped. 0 disables the limit.
+    private const DEFAULT_MAX_CHARS = 20000;
+
     // Cache table (webtrees applies its table prefix automatically).
     private const CACHE_TABLE = 'translate_notes_cache';
 
@@ -140,7 +146,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.27.0';
+        return '0.28.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -1294,6 +1300,9 @@ class TranslateNotesModule extends AbstractModule implements
             'endpoint'    => route('module', ['module' => $this->name(), 'action' => 'Translate']),
             'target'      => strtoupper(I18N::languageTag()),
             'selectors'   => $selectors,
+            // Skip an over-large block (a whole page region caught by a broad
+            // selector) rather than paying to "translate" it.
+            'maxChars'    => (int) $this->getPreference('note_max_chars', (string) self::DEFAULT_MAX_CHARS),
             'csrf'        => Session::getCsrfToken(),
             // Pages the visitor should see untranslated (applies to everyone).
             'noTranslate' => $this->noTranslatePages(),
@@ -1412,6 +1421,7 @@ class TranslateNotesModule extends AbstractModule implements
             'ms_region'        => $this->getPreference('microsoft_region', ''),
             'mm_email'         => $this->getPreference('mymemory_email', ''),
             'note_selector'    => $this->getPreference('note_selector', self::DEFAULT_SELECTOR),
+            'note_max_chars'   => (int) $this->getPreference('note_max_chars', (string) self::DEFAULT_MAX_CHARS),
             'edit_levels'      => $this->editLevelOptions(),
             'edit_access_level' => $this->getPreference('edit_access_level', self::DEFAULT_EDIT_LEVEL),
             'glossary_terms'   => $this->getPreference('glossary_terms', ''),
@@ -1440,6 +1450,7 @@ class TranslateNotesModule extends AbstractModule implements
         $this->setPreference('microsoft_region', trim($body->string('microsoft_region', '')));
         $this->setPreference('mymemory_email', trim($body->string('mymemory_email', '')));
         $this->setPreference('note_selector', trim($body->string('note_selector', self::DEFAULT_SELECTOR)));
+        $this->setPreference('note_max_chars', (string) max(0, $body->integer('note_max_chars', self::DEFAULT_MAX_CHARS)));
         $this->setPreference('pages_menu_title', trim($body->string('pages_menu_title', '')));
 
         // Glossary: on change, clear only the cached translations that contain an
@@ -1960,6 +1971,15 @@ class TranslateNotesModule extends AbstractModule implements
                 'cached'      => false,
                 'hash'        => $hash,
             ]);
+        }
+
+        // Backstop for the client-side size guard: never send an over-large block
+        // (a whole page region caught by a broad selector) to the engine. Cached
+        // entries were already served above; this only blocks fresh calls.
+        $max_chars = (int) $this->getPreference('note_max_chars', (string) self::DEFAULT_MAX_CHARS);
+
+        if ($max_chars > 0 && mb_strlen(trim(strip_tags($text))) > $max_chars) {
+            return response(['skipped' => true, 'reason' => 'too-long']);
         }
 
         try {

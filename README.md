@@ -62,11 +62,23 @@ consuming characters:
   stands out immediately. Resettable, so you can measure a fresh browsing session.
 - **Largest cached translations** — the biggest single entries.
 
-Two safeguards also cut needless characters automatically: **overlapping
-selectors no longer double-translate** (when one matched element is nested inside
-another, only the outer one is sent, so `.faq` together with `.faq_title` /
-`.faq_body` is billed once, not three times), and menu labels are only translated
-when the visitor's language differs from the site default.
+Three safeguards also cut needless characters automatically:
+
+- **Overlapping selectors no longer double-translate.** When one matched element
+  is nested inside another, only the outer one is sent, so `.faq` together with
+  `.faq_title` / `.faq_body` is billed once, not three times.
+- **A maximum length** (setting; default 20000 characters, `0` = off). A block
+  longer than this is almost never a single note — it is a whole page region
+  caught by an over-broad selector — so it is skipped rather than translated.
+  Raise it if you have genuinely long notes.
+- **Menu labels** are only translated when the visitor's language differs from
+  the site default.
+
+The biggest lever, though, is the **selector list itself**: keep it to the notes
+you actually want translated (scope `.wt-fact-value` to `.wt-tab-notes`, and drop
+anything that matches whole blocks such as recent changes, billboards, the site
+title or message lists). An unscoped or block-level selector translates entire
+page regions on every view.
 
 ## Install
 

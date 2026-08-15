@@ -18,6 +18,7 @@ use Fisharebest\Webtrees\I18N;
  * @var string               $ms_region
  * @var string               $mm_email
  * @var string               $note_selector
+ * @var int                  $note_max_chars
  * @var array<string,string> $edit_levels
  * @var string               $edit_access_level
  * @var string               $glossary_terms
@@ -169,6 +170,19 @@ use Fisharebest\Webtrees\I18N;
             <textarea class="form-control font-monospace" id="note_selector" name="note_selector" rows="4"><?= e($note_selector) ?></textarea>
             <div class="form-text">
                 <?= I18N::translate('CSS selectors matching the text to translate — one per line (add more to cover other notes or text areas). The default is “.wt-tab-notes .wt-fact-value”, which covers notes in the standard themes. Inspect an element in your browser to find the right selector for other text.') ?>
+                <strong><?= I18N::translate('Keep this list tight:') ?></strong>
+                <?= I18N::translate('a broad selector (for example an unscoped “.wt-fact-value”, or one matching a whole block such as recent changes) translates entire page regions and is the usual cause of excessive character usage. Use the Usage analysis to check what each selector costs.') ?>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="note_max_chars"><?= I18N::translate('Maximum length') ?></label>
+        <div class="col-sm-9">
+            <input type="number" class="form-control" id="note_max_chars" name="note_max_chars"
+                   value="<?= $note_max_chars ?>" min="0" step="1000" style="max-width: 12rem;">
+            <div class="form-text">
+                <?= I18N::translate('Blocks whose visible text is longer than this (in characters) are skipped instead of translated — a safety net against an over-broad selector catching a whole page region. The default is 20000. Set to 0 to remove the limit. Raise it if you have genuinely long notes that must be translated.') ?>
             </div>
         </div>
     </div>
