@@ -21,6 +21,9 @@ use Fisharebest\Webtrees\I18N;
  * @var array<string,string> $edit_levels
  * @var string               $edit_access_level
  * @var string               $glossary_terms
+ * @var array<int,array<string,mixed>> $pages
+ * @var string               $pages_menu_title
+ * @var array<string,string> $page_access_levels
  * @var int                  $no_translate_count
  * @var array<string,mixed>  $usage
  * @var array<string,int>    $usage_month
@@ -196,12 +199,92 @@ use Fisharebest\Webtrees\I18N;
         </div>
     </div>
 
+    <hr>
+    <h2 class="h5"><?= I18N::translate('Custom pages') ?></h2>
+
+    <div class="row mb-3">
+        <div class="col-sm-9 offset-sm-3">
+            <div class="form-text mt-0">
+                <?= I18N::translate('Add your own menu pages (a built-in replacement for the “Simple Menu” module). They appear in one main-menu dropdown, and — unlike Simple Menu — their content is translated automatically into each visitor’s language, exactly like notes. Edit the individual pages below; the dropdown’s own label is set here.') ?>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="pages_menu_title"><?= I18N::translate('Menu label') ?></label>
+        <div class="col-sm-9">
+            <input type="text" class="form-control" id="pages_menu_title" name="pages_menu_title"
+                   value="<?= e($pages_menu_title) ?>" maxlength="255" placeholder="<?= e(I18N::translate('Menu')) ?>">
+            <div class="form-text"><?= I18N::translate('The label of the main-menu dropdown that lists your custom pages. Defaults to “Menu”.') ?></div>
+        </div>
+    </div>
+
     <div class="row mb-3">
         <div class="col-sm-9 offset-sm-3">
             <button type="submit" class="btn btn-primary"><?= I18N::translate('save') ?></button>
         </div>
     </div>
 </form>
+
+<div class="row mb-3">
+    <div class="col-sm-3"><?= I18N::translate('Pages') ?></div>
+    <div class="col-sm-9">
+        <?php if ($pages === []) : ?>
+            <p class="text-muted"><?= I18N::translate('No custom pages yet.') ?></p>
+        <?php else : ?>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead>
+                        <tr>
+                            <th><?= I18N::translate('Menu label') ?></th>
+                            <th><?= I18N::translate('URL slug') ?></th>
+                            <th><?= I18N::translate('Visibility') ?></th>
+                            <th class="text-end"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($pages as $p) : ?>
+                            <tr>
+                                <td><?= e($p['menu'] !== '' ? $p['menu'] : $p['title']) ?></td>
+                                <td><code><?= e($p['slug']) ?></code></td>
+                                <td><?= e($page_access_levels[$p['access']] ?? $p['access']) ?></td>
+                                <td class="text-end text-nowrap">
+                                    <a class="btn btn-sm btn-outline-secondary"
+                                       href="<?= e(route('module', ['module' => $module, 'action' => 'PageEdit', 'id' => $p['id']])) ?>">
+                                        <?= I18N::translate('Edit') ?>
+                                    </a>
+                                    <form class="d-inline" method="post"
+                                          action="<?= e(route('module', ['module' => $module, 'action' => 'PageDelete'])) ?>"
+                                          onsubmit="return confirm('<?= e(I18N::translate('Delete this page?')) ?>');">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="id" value="<?= e($p['id']) ?>">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger"><?= I18N::translate('Delete') ?></button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif ?>
+
+        <div class="d-flex gap-2 mt-2">
+            <a class="btn btn-outline-primary"
+               href="<?= e(route('module', ['module' => $module, 'action' => 'PageEdit'])) ?>">
+                <?= I18N::translate('Add a page') ?>
+            </a>
+            <form method="post" action="<?= e(route('module', ['module' => $module, 'action' => 'PagesImport'])) ?>"
+                  onsubmit="return confirm('<?= e(I18N::translate('Import all pages from the Simple Menu module(s)?')) ?>');">
+                <?= csrf_field() ?>
+                <button type="submit" class="btn btn-outline-secondary"><?= I18N::translate('Import from Simple Menu') ?></button>
+            </form>
+        </div>
+        <div class="form-text">
+            <?= I18N::translate('“Import from Simple Menu” copies the page(s) from any installed Simple Menu module into this list. It is safe to run more than once (existing pages are skipped). Afterwards you can disable the Simple Menu module(s).') ?>
+        </div>
+    </div>
+</div>
+
 
 <hr>
 <h2 class="h5"><?= I18N::translate('Usage') ?></h2>

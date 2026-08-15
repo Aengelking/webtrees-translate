@@ -1,0 +1,121 @@
+<?php
+
+declare(strict_types=1);
+
+use Fisharebest\Webtrees\I18N;
+
+/**
+ * Add / edit a single custom page (admin).
+ *
+ * @var string                    $title
+ * @var string                    $module
+ * @var array<string,mixed>|null  $page
+ * @var string                    $body
+ * @var array<string,string>      $access_levels
+ * @var string                    $settings_link
+ * @var string                    $control_panel
+ */
+
+$id       = (string) ($page['id'] ?? '');
+$menu     = (string) ($page['menu'] ?? '');
+$slug     = (string) ($page['slug'] ?? '');
+$p_title  = (string) ($page['title'] ?? '');
+$position = (int) ($page['position'] ?? 0);
+$access   = (string) ($page['access'] ?? 'public');
+
+?>
+
+<?= view('components/breadcrumbs', ['links' => [
+    $control_panel => I18N::translate('Control panel'),
+    $settings_link => I18N::translate('Translate Notes'),
+    $title,
+]]) ?>
+
+<h1><?= e($title) ?></h1>
+
+<form method="post" action="<?= e(route('module', ['module' => $module, 'action' => 'PageSave'])) ?>">
+    <?= csrf_field() ?>
+    <input type="hidden" name="id" value="<?= e($id) ?>">
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="tn-page-menu"><?= I18N::translate('Menu label') ?></label>
+        <div class="col-sm-9">
+            <input type="text" class="form-control" id="tn-page-menu" name="menu" value="<?= e($menu) ?>" maxlength="255">
+            <div class="form-text"><?= I18N::translate('The text shown in the menu dropdown.') ?></div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="tn-page-title"><?= I18N::translate('Page title') ?></label>
+        <div class="col-sm-9">
+            <input type="text" class="form-control" id="tn-page-title" name="title" value="<?= e($p_title) ?>" maxlength="255">
+            <div class="form-text"><?= I18N::translate('The heading shown at the top of the page. Defaults to the menu label.') ?></div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="tn-page-slug"><?= I18N::translate('URL slug') ?></label>
+        <div class="col-sm-9">
+            <input type="text" class="form-control font-monospace" id="tn-page-slug" name="slug" value="<?= e($slug) ?>" maxlength="255" placeholder="<?= e(I18N::translate('leave blank to generate from the menu label')) ?>">
+            <div class="form-text"><?= I18N::translate('The address of the page. Leave blank to generate one from the menu label; it is made unique automatically.') ?></div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="tn-page-access"><?= I18N::translate('Visibility') ?></label>
+        <div class="col-sm-9">
+            <select class="form-select" id="tn-page-access" name="access">
+                <?php foreach ($access_levels as $key => $label) : ?>
+                    <option value="<?= e($key) ?>" <?= $access === $key ? 'selected' : '' ?>><?= e($label) ?></option>
+                <?php endforeach ?>
+            </select>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="tn-page-position"><?= I18N::translate('Position') ?></label>
+        <div class="col-sm-9">
+            <input type="number" class="form-control" id="tn-page-position" name="position" value="<?= $position ?>" min="0" style="max-width: 8rem;">
+            <div class="form-text"><?= I18N::translate('Order in the menu dropdown (lower numbers first). 0 places it at the end.') ?></div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="tn-page-body"><?= I18N::translate('Content') ?></label>
+        <div class="col-sm-9">
+            <textarea class="form-control html-edit" id="tn-page-body" name="body" rows="18"><?= e($body) ?></textarea>
+            <div class="form-text"><?= I18N::translate('The page content. It is translated automatically into the visitor’s language, so author it in your site’s default language.') ?></div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-sm-9 offset-sm-3">
+            <button type="submit" class="btn btn-primary"><?= I18N::translate('save') ?></button>
+            <a class="btn btn-link" href="<?= e($settings_link) ?>"><?= I18N::translate('cancel') ?></a>
+        </div>
+    </div>
+</form>
+
+<script>
+    // Reuse the CKEditor that webtrees already bundles for the rich-text body.
+    // The administration layout does not always initialise textarea.html-edit,
+    // so attach it here; if CKEditor is unavailable the plain textarea is used.
+    (function () {
+        var id = 'tn-page-body';
+
+        function attach() {
+            if (window.CKEDITOR && !window.CKEDITOR.instances[id]) {
+                window.CKEDITOR.replace(id);
+            }
+        }
+
+        if (window.CKEDITOR) {
+            attach();
+        } else if (typeof CKEDITOR_BASEPATH !== 'undefined') {
+            var s = document.createElement('script');
+            s.src = CKEDITOR_BASEPATH + 'ckeditor.js';
+            s.addEventListener('load', attach);
+            document.head.appendChild(s);
+        }
+    })();
+</script>

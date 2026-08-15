@@ -26,8 +26,11 @@ namespace TranslateNotes;
 use Fisharebest\Webtrees\Auth;
 use Fisharebest\Webtrees\DB;
 use Fisharebest\Webtrees\FlashMessages;
+use Fisharebest\Webtrees\Http\Exceptions\HttpAccessDeniedException;
+use Fisharebest\Webtrees\Http\Exceptions\HttpNotFoundException;
 use Fisharebest\Webtrees\Http\RequestHandlers\ControlPanel;
 use Fisharebest\Webtrees\I18N;
+use Fisharebest\Webtrees\Menu;
 use Fisharebest\Webtrees\Module\AbstractModule;
 use Fisharebest\Webtrees\Module\ModuleConfigInterface;
 use Fisharebest\Webtrees\Module\ModuleConfigTrait;
@@ -35,6 +38,8 @@ use Fisharebest\Webtrees\Module\ModuleCustomInterface;
 use Fisharebest\Webtrees\Module\ModuleCustomTrait;
 use Fisharebest\Webtrees\Module\ModuleGlobalInterface;
 use Fisharebest\Webtrees\Module\ModuleGlobalTrait;
+use Fisharebest\Webtrees\Module\ModuleMenuInterface;
+use Fisharebest\Webtrees\Module\ModuleMenuTrait;
 use Fisharebest\Webtrees\Registry;
 use Fisharebest\Webtrees\Session;
 use Fisharebest\Webtrees\Tree;
@@ -67,15 +72,20 @@ use function route;
  *   - ModuleCustomInterface  (required for all custom modules)
  *   - ModuleConfigInterface  (adds the admin settings page)
  *   - ModuleGlobalInterface  (injects the front-end JS into every genealogy page)
+ *   - ModuleMenuInterface    (adds a main-menu dropdown of custom pages, a
+ *                             built-in replacement for the "Simple Menu" module,
+ *                             whose page content is auto-translated like notes)
  */
 class TranslateNotesModule extends AbstractModule implements
     ModuleCustomInterface,
     ModuleConfigInterface,
-    ModuleGlobalInterface
+    ModuleGlobalInterface,
+    ModuleMenuInterface
 {
     use ModuleCustomTrait;
     use ModuleConfigTrait;
     use ModuleGlobalTrait;
+    use ModuleMenuTrait;
 
     // webtrees 2.2 renders note bodies inside <div class="wt-fact-value"> within
     // the Notes tab (.wt-tab-notes). Scoping to the tab keeps auto-translation off
@@ -127,7 +137,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.24.0';
+        return '0.25.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -617,6 +627,489 @@ class TranslateNotesModule extends AbstractModule implements
     }
 
     // ---------------------------------------------------------------------
+    // Custom pages - a built-in replacement for the "Simple Menu" module.
+    //
+    // Pages are shown in a single main-menu dropdown. Because a page body is
+    // ordinary page content carrying the wt-tn-page-body class, it is translated
+    // automatically by this very module - so, unlike Simple Menu, each page is
+    // shown in the visitor's own language (glossary, cache and "do not translate"
+    // all apply). Page metadata is kept in one small JSON preference; each page's
+    // BODY is stored in its own preference so a long page cannot overflow the
+    // shared setting, exactly as Simple Menu stored one body per module.
+    // ---------------------------------------------------------------------
+
+    private const PAGE_ACCESS_LEVELS  = ['public', 'members', 'managers'];
+    private const DEFAULT_PAGE_ACCESS = 'public';
+
+    /**
+     * Page metadata (without the body), sorted by position then menu label.
+     *
+     * @return array<int,array{id:string,menu:string,slug:string,title:string,position:int,access:string}>
+     */
+    private function pageIndex(): array
+    {
+        $decoded = json_decode($this->getPreference('custom_pages', ''), true);
+
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $pages = [];
+
+        foreach ($decoded as $entry) {
+            if (!is_array($entry) || !isset($entry['id'])) {
+                continue;
+            }
+
+            $access = (string) ($entry['access'] ?? self::DEFAULT_PAGE_ACCESS);
+
+            $pages[] = [
+                'id'       => (string) $entry['id'],
+                'menu'     => (string) ($entry['menu'] ?? ''),
+                'slug'     => (string) ($entry['slug'] ?? ''),
+                'title'    => (string) ($entry['title'] ?? ''),
+                'position' => (int) ($entry['position'] ?? 0),
+                'access'   => in_array($access, self::PAGE_ACCESS_LEVELS, true) ? $access : self::DEFAULT_PAGE_ACCESS,
+            ];
+        }
+
+        usort($pages, static fn (array $a, array $b): int => [$a['position'], $a['menu']] <=> [$b['position'], $b['menu']]);
+
+        return $pages;
+    }
+
+    /** @param array<int,array<string,mixed>> $pages */
+    private function savePageIndex(array $pages): void
+    {
+        $clean = [];
+
+        foreach ($pages as $p) {
+            $clean[] = [
+                'id'       => (string) $p['id'],
+                'menu'     => (string) $p['menu'],
+                'slug'     => (string) $p['slug'],
+                'title'    => (string) $p['title'],
+                'position' => (int) $p['position'],
+                'access'   => (string) $p['access'],
+            ];
+        }
+
+        $this->setPreference('custom_pages', json_encode($clean, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    /** The HTML body of a page, stored in its own preference. */
+    private function pageBody(string $id): string
+    {
+        return $this->getPreference('page_body_' . $id, '');
+    }
+
+    /** @return array<string,mixed>|null */
+    private function findPage(string $id): ?array
+    {
+        foreach ($this->pageIndex() as $p) {
+            if ($p['id'] === $id) {
+                return $p;
+            }
+        }
+
+        return null;
+    }
+
+    /** @return array<string,mixed>|null */
+    private function findPageBySlug(string $slug): ?array
+    {
+        if ($slug === '') {
+            return null;
+        }
+
+        foreach ($this->pageIndex() as $p) {
+            if ($p['slug'] === $slug) {
+                return $p;
+            }
+        }
+
+        return null;
+    }
+
+    /** Turn a label into a URL-safe slug (ASCII words, hyphen-separated). */
+    private function slugify(string $text): string
+    {
+        $text  = (string) preg_replace('/[\'"]+/u', '', $text);
+        $ascii = @iconv('UTF-8', 'ASCII//TRANSLIT', $text); // é -> e, ü -> u, etc.
+
+        if ($ascii !== false) {
+            $text = $ascii;
+        }
+
+        $text = strtolower($text);
+        $text = (string) preg_replace('/[^a-z0-9]+/', '-', $text);
+        $text = trim($text, '-');
+
+        return $text === '' ? 'page' : $text;
+    }
+
+    /**
+     * A slug not already used by another page (appends -2, -3, ... on collision).
+     *
+     * @param array<int,array<string,mixed>> $pages
+     */
+    private function uniqueSlug(string $slug, string $exceptId, array $pages): string
+    {
+        $slug = $this->slugify($slug);
+        $base = $slug;
+        $n    = 2;
+
+        $used = static function (string $candidate) use ($pages, $exceptId): bool {
+            foreach ($pages as $p) {
+                if ($p['id'] !== $exceptId && $p['slug'] === $candidate) {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        while ($used($slug)) {
+            $slug = $base . '-' . $n++;
+        }
+
+        return $slug;
+    }
+
+    /** @param array<int,array<string,mixed>> $pages */
+    private function newPageId(array $pages): string
+    {
+        $max = 0;
+
+        foreach ($pages as $p) {
+            $max = max($max, (int) $p['id']);
+        }
+
+        return (string) ($max + 1);
+    }
+
+    /** May the given page be seen by the current user in this tree? */
+    private function pageVisible(array $page, ?Tree $tree): bool
+    {
+        switch ($page['access']) {
+            case 'managers':
+                return $tree !== null && Auth::isManager($tree);
+            case 'members':
+                return $tree !== null && Auth::isMember($tree);
+            case 'public':
+            default:
+                return true;
+        }
+    }
+
+    /**
+     * @return array<int,array<string,mixed>> the pages visible to the current user
+     */
+    private function visiblePages(?Tree $tree): array
+    {
+        return array_values(array_filter(
+            $this->pageIndex(),
+            fn (array $p): bool => $this->pageVisible($p, $tree)
+        ));
+    }
+
+    /** Label of the main-menu dropdown that lists the custom pages. */
+    private function pagesMenuTitle(): string
+    {
+        $title = trim($this->getPreference('pages_menu_title', ''));
+
+        return $title !== '' ? $title : I18N::translate('Menu');
+    }
+
+    private function pageUrl(Tree $tree, string $slug): string
+    {
+        return route('module', [
+            'module' => $this->name(),
+            'action' => 'Page',
+            'tree'   => $tree->name(),
+            'slug'   => $slug,
+        ]);
+    }
+
+    /**
+     * @return array<string,string> access key => label, for the admin dropdown
+     */
+    private function pageAccessOptions(): array
+    {
+        return [
+            'public'   => I18N::translate('Visible to everyone'),
+            'members'  => I18N::translate('Signed-in members'),
+            'managers' => I18N::translate('Managers'),
+        ];
+    }
+
+    // ---------------------------------------------------------------------
+    // ModuleMenuInterface - one main-menu dropdown listing the custom pages.
+    // ---------------------------------------------------------------------
+
+    public function defaultMenuOrder(): int
+    {
+        return 99; // after the built-in menus; reorder in Control panel > Menus
+    }
+
+    public function getMenu(Tree $tree): ?Menu
+    {
+        $pages = $this->visiblePages($tree);
+
+        if ($pages === []) {
+            return null; // no menu at all until at least one page exists
+        }
+
+        $submenus = [];
+
+        foreach ($pages as $page) {
+            $label = $page['menu'] !== ''
+                ? $page['menu']
+                : ($page['title'] !== '' ? $page['title'] : $page['slug']);
+
+            $submenus[] = new Menu(
+                $label,
+                $this->pageUrl($tree, $page['slug']),
+                'menu-' . $this->name() . '-' . $page['slug']
+            );
+        }
+
+        return new Menu(
+            $this->pagesMenuTitle(),
+            '#',
+            'menu-' . $this->name(),
+            ['rel' => 'nofollow'],
+            $submenus
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // Front-end page view. GET /module/<name>/Page?slug=...&tree=...
+    // The body is authored HTML rendered as-is; because it carries the
+    // wt-tn-page-body class, this module's own script translates it into the
+    // visitor's language just like a note.
+    // ---------------------------------------------------------------------
+
+    public function getPageAction(ServerRequestInterface $request): ResponseInterface
+    {
+        $tree = $this->currentTree($request);
+        $slug = Validator::queryParams($request)->string('slug', '');
+        $page = $this->findPageBySlug($slug);
+
+        if ($page === null) {
+            throw new HttpNotFoundException(I18N::translate('This page does not exist.'));
+        }
+
+        if (!$this->pageVisible($page, $tree)) {
+            throw new HttpAccessDeniedException();
+        }
+
+        $this->layout = 'layouts/default';
+
+        return $this->viewResponse($this->name() . '::page', [
+            'tree'  => $tree,
+            'title' => $page['title'] !== '' ? $page['title'] : $page['menu'],
+            'body'  => $this->pageBody($page['id']),
+        ]);
+    }
+
+    // ---------------------------------------------------------------------
+    // Custom-page management (admin only). Editing/listing lives in the admin
+    // settings; each page has its own edit form with a rich-text body.
+    // ---------------------------------------------------------------------
+
+    /** Show the add/edit form for a single page. */
+    public function getPageEditAction(ServerRequestInterface $request): ResponseInterface
+    {
+        if (!Auth::isAdmin()) {
+            return response('', 403);
+        }
+
+        $this->layout = 'layouts/administration';
+
+        $id   = Validator::queryParams($request)->string('id', '');
+        $page = $id === '' ? null : $this->findPage($id);
+
+        return $this->viewResponse($this->name() . '::page-edit', [
+            'title'         => ($page === null ? I18N::translate('Add a page') : I18N::translate('Edit page')) . ' — ' . $this->title(),
+            'module'        => $this->name(),
+            'page'          => $page,
+            'body'          => $page === null ? '' : $this->pageBody($page['id']),
+            'access_levels' => $this->pageAccessOptions(),
+            'settings_link' => $this->getConfigLink(),
+            'control_panel' => route(ControlPanel::class),
+        ]);
+    }
+
+    /** Create or update a page. */
+    public function postPageSaveAction(ServerRequestInterface $request): ResponseInterface
+    {
+        if (!Auth::isAdmin()) {
+            return response('', 403);
+        }
+
+        $data     = Validator::parsedBody($request);
+        $id       = trim($data->string('id', ''));
+        $menu     = trim($data->string('menu', ''));
+        $title    = trim($data->string('title', ''));
+        $html     = $data->string('body', '');
+        $slug_in  = trim($data->string('slug', ''));
+        $position = $data->integer('position', 0);
+        $access   = $data->string('access', self::DEFAULT_PAGE_ACCESS);
+
+        if (!in_array($access, self::PAGE_ACCESS_LEVELS, true)) {
+            $access = self::DEFAULT_PAGE_ACCESS;
+        }
+
+        if ($menu === '' && $title === '') {
+            FlashMessages::addMessage(I18N::translate('A page needs at least a menu label or a title.'), 'danger');
+
+            return redirect(route('module', ['module' => $this->name(), 'action' => 'PageEdit', 'id' => $id]));
+        }
+
+        $pages = $this->pageIndex();
+
+        if ($id === '' || $this->findPage($id) === null) {
+            $id = $this->newPageId($pages);
+        }
+
+        // Derive the slug from the supplied slug, else the menu label, else title.
+        $slug = $this->uniqueSlug($slug_in !== '' ? $slug_in : ($menu !== '' ? $menu : $title), $id, $pages);
+
+        $entry = [
+            'id'       => $id,
+            'menu'     => $menu,
+            'slug'     => $slug,
+            'title'    => $title,
+            'position' => $position > 0 ? $position : count($pages) + 1,
+            'access'   => $access,
+        ];
+
+        $found = false;
+        foreach ($pages as &$p) {
+            if ($p['id'] === $id) {
+                $p     = $entry;
+                $found = true;
+                break;
+            }
+        }
+        unset($p);
+
+        if (!$found) {
+            $pages[] = $entry;
+        }
+
+        $this->savePageIndex($pages);
+        $this->setPreference('page_body_' . $id, $html);
+
+        FlashMessages::addMessage(I18N::translate('The page has been saved.'), 'success');
+
+        return redirect($this->getConfigLink());
+    }
+
+    /** Delete a page (metadata + its body preference). */
+    public function postPageDeleteAction(ServerRequestInterface $request): ResponseInterface
+    {
+        if (!Auth::isAdmin()) {
+            return response('', 403);
+        }
+
+        $id    = Validator::parsedBody($request)->string('id', '');
+        $pages = array_values(array_filter($this->pageIndex(), static fn (array $p): bool => $p['id'] !== $id));
+
+        $this->savePageIndex($pages);
+        $this->setPreference('page_body_' . $id, ''); // clear the (possibly large) body
+
+        FlashMessages::addMessage(I18N::translate('The page has been deleted.'), 'success');
+
+        return redirect($this->getConfigLink());
+    }
+
+    /** Import pages from any installed "Simple Menu" module. */
+    public function postPagesImportAction(ServerRequestInterface $request): ResponseInterface
+    {
+        if (!Auth::isAdmin()) {
+            return response('', 403);
+        }
+
+        $count = $this->importSimpleMenu();
+
+        if ($count > 0) {
+            FlashMessages::addMessage(
+                I18N::translate('%s pages were imported from Simple Menu. You can now disable the Simple Menu module(s).', I18N::number($count)),
+                'success'
+            );
+        } else {
+            FlashMessages::addMessage(I18N::translate('No new Simple Menu pages were found to import.'), 'info');
+        }
+
+        return redirect($this->getConfigLink());
+    }
+
+    /**
+     * Read each installed "Simple Menu" instance straight from the module_setting
+     * table (it stores one page as menu-title / page-title / page-body) and create
+     * a matching custom page. Pages whose menu label already exists are skipped,
+     * so this is safe to run more than once.
+     */
+    private function importSimpleMenu(): int
+    {
+        $pages = $this->pageIndex();
+
+        $existing = [];
+        foreach ($pages as $p) {
+            $existing[mb_strtolower($p['menu'])] = true;
+        }
+
+        $bodies   = DB::table('module_setting')->where('setting_name', '=', 'page-body')->get();
+        $imported = 0;
+
+        foreach ($bodies as $row) {
+            $module = (string) ($row->module_name ?? '');
+
+            if (stripos($module, 'simple-menu') === false) {
+                continue; // only Simple Menu instances use these settings
+            }
+
+            $body  = (string) ($row->setting_value ?? '');
+            $menu  = (string) (DB::table('module_setting')->where('module_name', '=', $module)->where('setting_name', '=', 'menu-title')->first()?->setting_value ?? '');
+            $title = (string) (DB::table('module_setting')->where('module_name', '=', $module)->where('setting_name', '=', 'page-title')->first()?->setting_value ?? '');
+
+            if ($menu === '' && $title === '' && $body === '') {
+                continue;
+            }
+
+            $label = $menu !== '' ? $menu : ($title !== '' ? $title : $module);
+
+            if (isset($existing[mb_strtolower($label)])) {
+                continue; // already present
+            }
+
+            $id   = $this->newPageId($pages);
+            $slug = $this->uniqueSlug($label, '', $pages);
+
+            $pages[] = [
+                'id'       => $id,
+                'menu'     => $label,
+                'slug'     => $slug,
+                'title'    => $title !== '' ? $title : $label,
+                'position' => count($pages) + 1,
+                'access'   => self::DEFAULT_PAGE_ACCESS,
+            ];
+
+            $existing[mb_strtolower($label)] = true;
+            $this->setPreference('page_body_' . $id, $body);
+            $imported++;
+        }
+
+        if ($imported > 0) {
+            $this->savePageIndex($pages);
+        }
+
+        return $imported;
+    }
+
+    // ---------------------------------------------------------------------
     // ModuleGlobalInterface - inject front-end assets into every page.
     // ---------------------------------------------------------------------
 
@@ -631,10 +1124,16 @@ class TranslateNotesModule extends AbstractModule implements
         // front-end detects each note's language and only translates the ones that
         // are NOT already in the visitor's page language, so same-language notes
         // cost nothing. The engine still auto-detects the source of what it sends.
+        // The configured note selectors, plus the custom-page classes so a custom
+        // page's title and body are always translated regardless of that setting.
+        $selectors   = $this->noteSelectors();
+        $selectors[] = '.wt-tn-page-title';
+        $selectors[] = '.wt-tn-page-body';
+
         $config = [
             'endpoint'    => route('module', ['module' => $this->name(), 'action' => 'Translate']),
             'target'      => strtoupper(I18N::languageTag()),
-            'selectors'   => $this->noteSelectors(),
+            'selectors'   => $selectors,
             'csrf'        => Session::getCsrfToken(),
             // Pages the visitor should see untranslated (applies to everyone).
             'noTranslate' => $this->noTranslatePages(),
@@ -756,6 +1255,9 @@ class TranslateNotesModule extends AbstractModule implements
             'edit_levels'      => $this->editLevelOptions(),
             'edit_access_level' => $this->getPreference('edit_access_level', self::DEFAULT_EDIT_LEVEL),
             'glossary_terms'   => $this->getPreference('glossary_terms', ''),
+            'pages'            => $this->pageIndex(),
+            'pages_menu_title' => $this->getPreference('pages_menu_title', ''),
+            'page_access_levels' => $this->pageAccessOptions(),
             'no_translate_count' => count($this->noTranslatePages()),
             'usage'            => $this->engineUsage(),
             'usage_month'      => $this->usageByMonth(),
@@ -778,6 +1280,7 @@ class TranslateNotesModule extends AbstractModule implements
         $this->setPreference('microsoft_region', trim($body->string('microsoft_region', '')));
         $this->setPreference('mymemory_email', trim($body->string('mymemory_email', '')));
         $this->setPreference('note_selector', trim($body->string('note_selector', self::DEFAULT_SELECTOR)));
+        $this->setPreference('pages_menu_title', trim($body->string('pages_menu_title', '')));
 
         // Glossary: on change, clear only the cached translations that contain an
         // affected term so the new protection takes effect without a full re-run.

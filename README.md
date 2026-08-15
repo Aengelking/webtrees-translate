@@ -131,6 +131,35 @@ renamed. On an excluded page, editors see a small **Enable translation** banner
 to switch it back on, and administrators can clear the whole list at once from
 the settings page (**Pages excluded from translation → Re-enable all pages**).
 
+## Custom pages — a built-in “Simple Menu”
+
+The module can host your own **menu pages** (an "About us", a chronicle, a
+contact page), so you no longer need a separate menu module for them. The point
+of building this in is translation: because a page's content is ordinary page
+markup that the module already sees, **every custom page is translated
+automatically into the visitor's language**, exactly like a note — glossary,
+cache and "do not translate" all apply. (The popular *Simple Menu* module
+explicitly offers "no different pages per language"; this closes that gap.)
+
+Manage them in **Control panel → Translate Notes → Custom pages**:
+
+- **Add a page** with a *menu label*, an optional *page title*, a *URL slug*
+  (generated from the label if left blank, and always made unique), a
+  *position*, a *visibility* (everyone / signed-in members / managers) and a
+  rich-text *body* (the CKEditor webtrees already bundles).
+- All pages appear together in **one main-menu dropdown** whose own label you
+  set (default “Menu”). This is one module, so it contributes one top-level menu
+  slot — reorder or rename it under **Control panel → Menus** like any other.
+- Author each page in your **site's default language**; visitors viewing another
+  language get it translated on the fly and cached.
+
+**Importing from Simple Menu.** If you already run the JustCarmen *Simple Menu*
+module (one or several copies), press **Import from Simple Menu**. It reads each
+installed instance's stored page (its menu label, title and body) straight from
+the database and creates a matching custom page. It is safe to run more than once
+(pages already present are skipped). Afterwards you can disable the Simple Menu
+module(s).
+
 ## Managing the cache
 
 **Inline, on the front-end:** each translated note shows small **edit** /
