@@ -239,15 +239,24 @@ use Fisharebest\Webtrees\I18N;
                             <th><?= I18N::translate('Menu label') ?></th>
                             <th><?= I18N::translate('URL slug') ?></th>
                             <th><?= I18N::translate('Visibility') ?></th>
+                            <th><?= I18N::translate('Languages') ?></th>
                             <th class="text-end"></th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ($pages as $p) : ?>
+                            <?php $authored = array_keys((array) ($p['i18n'] ?? [])); ?>
                             <tr>
                                 <td><?= e($p['menu'] !== '' ? $p['menu'] : $p['title']) ?></td>
                                 <td><code><?= e($p['slug']) ?></code></td>
                                 <td><?= e($page_access_levels[$p['access']] ?? $p['access']) ?></td>
+                                <td class="small text-muted">
+                                    <?php if ($authored === []) : ?>
+                                        <span title="<?= e(I18N::translate('Other languages are filled in by automatic translation.')) ?>"><?= e(I18N::translate('auto')) ?></span>
+                                    <?php else : ?>
+                                        <?= e(implode(', ', $authored)) ?>
+                                    <?php endif ?>
+                                </td>
                                 <td class="text-end text-nowrap">
                                     <a class="btn btn-sm btn-outline-secondary"
                                        href="<?= e(route('module', ['module' => $module, 'action' => 'PageEdit', 'id' => $p['id']])) ?>">

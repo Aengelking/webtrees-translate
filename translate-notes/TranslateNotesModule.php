@@ -38,10 +38,13 @@ use Fisharebest\Webtrees\Module\ModuleCustomInterface;
 use Fisharebest\Webtrees\Module\ModuleCustomTrait;
 use Fisharebest\Webtrees\Module\ModuleGlobalInterface;
 use Fisharebest\Webtrees\Module\ModuleGlobalTrait;
+use Fisharebest\Webtrees\Module\ModuleLanguageInterface;
 use Fisharebest\Webtrees\Module\ModuleMenuInterface;
 use Fisharebest\Webtrees\Module\ModuleMenuTrait;
 use Fisharebest\Webtrees\Registry;
+use Fisharebest\Webtrees\Services\ModuleService;
 use Fisharebest\Webtrees\Session;
+use Fisharebest\Webtrees\Site;
 use Fisharebest\Webtrees\Tree;
 use Fisharebest\Webtrees\Validator;
 use Fisharebest\Webtrees\View;
@@ -137,7 +140,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.25.0';
+        return '0.26.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -670,12 +673,42 @@ class TranslateNotesModule extends AbstractModule implements
                 'title'    => (string) ($entry['title'] ?? ''),
                 'position' => (int) ($entry['position'] ?? 0),
                 'access'   => in_array($access, self::PAGE_ACCESS_LEVELS, true) ? $access : self::DEFAULT_PAGE_ACCESS,
+                // Per-language overrides for the (short) menu label and title.
+                // Bodies are kept in their own per-language preferences.
+                'i18n'     => $this->cleanI18n($entry['i18n'] ?? []),
             ];
         }
 
         usort($pages, static fn (array $a, array $b): int => [$a['position'], $a['menu']] <=> [$b['position'], $b['menu']]);
 
         return $pages;
+    }
+
+    /**
+     * Normalise a per-language override map to [langTag => ['menu'=>…,'title'=>…]].
+     *
+     * @return array<string,array{menu:string,title:string}>
+     */
+    private function cleanI18n($raw): array
+    {
+        if (!is_array($raw)) {
+            return [];
+        }
+
+        $out = [];
+
+        foreach ($raw as $tag => $vals) {
+            if (!is_array($vals)) {
+                continue;
+            }
+
+            $out[(string) $tag] = [
+                'menu'  => (string) ($vals['menu'] ?? ''),
+                'title' => (string) ($vals['title'] ?? ''),
+            ];
+        }
+
+        return $out;
     }
 
     /** @param array<int,array<string,mixed>> $pages */
@@ -691,6 +724,7 @@ class TranslateNotesModule extends AbstractModule implements
                 'title'    => (string) $p['title'],
                 'position' => (int) $p['position'],
                 'access'   => (string) $p['access'],
+                'i18n'     => $this->cleanI18n($p['i18n'] ?? []),
             ];
         }
 
@@ -843,6 +877,70 @@ class TranslateNotesModule extends AbstractModule implements
         ];
     }
 
+    /**
+     * The site's active languages, as [languageTag => native name], for the
+     * per-language page editor. Defensive: if the module service is unavailable
+     * (or in a non-web context) it returns an empty list rather than throwing.
+     *
+     * @return array<string,string>
+     */
+    private function activeLanguages(): array
+    {
+        try {
+            $service = Registry::container()->get(ModuleService::class);
+            $out     = [];
+
+            foreach ($service->findByInterface(ModuleLanguageInterface::class) as $language) {
+                $locale = $language->locale();
+                $out[$locale->languageTag()] = $locale->endonym();
+            }
+
+            asort($out);
+
+            return $out;
+        } catch (\Throwable $exception) {
+            return [];
+        }
+    }
+
+    /**
+     * Which of a page's authored languages best matches the given page language:
+     * an exact tag match first, then a primary-subtag match (so "en-GB" can use
+     * an "en-US" override). Returns '' when the page has no override for it.
+     */
+    private function overrideLangKey(array $page, string $lang): string
+    {
+        $i18n = $page['i18n'] ?? [];
+
+        if (!is_array($i18n) || $i18n === []) {
+            return '';
+        }
+
+        $lower = strtolower($lang);
+
+        foreach (array_keys($i18n) as $tag) {
+            if (strtolower((string) $tag) === $lower) {
+                return (string) $tag;
+            }
+        }
+
+        $primary = $this->primaryLang($lang);
+
+        foreach (array_keys($i18n) as $tag) {
+            if ($this->primaryLang((string) $tag) === $primary) {
+                return (string) $tag;
+            }
+        }
+
+        return '';
+    }
+
+    /** The site's default language tag (what the base page content is authored in). */
+    private function defaultLanguage(): string
+    {
+        return Site::getPreference('LANGUAGE', '');
+    }
+
     // ---------------------------------------------------------------------
     // ModuleMenuInterface - one main-menu dropdown listing the custom pages.
     // ---------------------------------------------------------------------
@@ -860,18 +958,31 @@ class TranslateNotesModule extends AbstractModule implements
             return null; // no menu at all until at least one page exists
         }
 
+        $page_lang = I18N::languageTag();
+        // Only auto-translate labels client-side when the visitor's language
+        // differs from the language the labels are authored in (the site default).
+        $needs_translation = $this->primaryLang($page_lang) !== $this->primaryLang($this->defaultLanguage());
+
         $submenus = [];
 
         foreach ($pages as $page) {
-            $label = $page['menu'] !== ''
-                ? $page['menu']
-                : ($page['title'] !== '' ? $page['title'] : $page['slug']);
+            $key      = $this->overrideLangKey($page, $page_lang);
+            $authored = $key !== '' ? (string) ($page['i18n'][$key]['menu'] ?? '') : '';
 
-            $submenus[] = new Menu(
-                $label,
-                $this->pageUrl($tree, $page['slug']),
-                'menu-' . $this->name() . '-' . $page['slug']
-            );
+            if ($authored !== '') {
+                // A hand-authored label for this language: use it as-is.
+                $label = $authored;
+                $class = 'menu-' . $this->name() . '-' . $page['slug'];
+            } else {
+                // Fall back to the default label; tag it so the front-end script
+                // translates it into the visitor's language (unless it already is).
+                $label = $page['menu'] !== ''
+                    ? $page['menu']
+                    : ($page['title'] !== '' ? $page['title'] : $page['slug']);
+                $class = 'menu-' . $this->name() . '-' . $page['slug'] . ($needs_translation ? ' wt-tn-menu-label' : '');
+            }
+
+            $submenus[] = new Menu($label, $this->pageUrl($tree, $page['slug']), $class);
         }
 
         return new Menu(
@@ -906,10 +1017,25 @@ class TranslateNotesModule extends AbstractModule implements
 
         $this->layout = 'layouts/default';
 
+        // Prefer a hand-authored version for the visitor's language; otherwise
+        // render the base (default-language) content and let the front-end script
+        // translate it automatically (the auto-fallback of the hybrid model).
+        $page_lang = I18N::languageTag();
+        $key       = $this->overrideLangKey($page, $page_lang);
+
+        $title_override = $key !== '' ? (string) ($page['i18n'][$key]['title'] ?? '') : '';
+        $body_override  = $key !== '' ? $this->getPreference('page_body_' . $page['id'] . '_' . $key, '') : '';
+
+        $default_title = $page['title'] !== '' ? $page['title'] : $page['menu'];
+
         return $this->viewResponse($this->name() . '::page', [
-            'tree'  => $tree,
-            'title' => $page['title'] !== '' ? $page['title'] : $page['menu'],
-            'body'  => $this->pageBody($page['id']),
+            'tree'            => $tree,
+            'title'           => $title_override !== '' ? $title_override : $default_title,
+            'body'            => $body_override !== '' ? $body_override : $this->pageBody($page['id']),
+            // An authored version is already in the visitor's language, so it must
+            // NOT be sent to the engine; only the auto-fallback content is.
+            'title_translate' => $title_override === '',
+            'body_translate'  => $body_override === '',
         ]);
     }
 
@@ -930,11 +1056,23 @@ class TranslateNotesModule extends AbstractModule implements
         $id   = Validator::queryParams($request)->string('id', '');
         $page = $id === '' ? null : $this->findPage($id);
 
+        // Per-language bodies for the editor's prefill (one preference each).
+        $lang_bodies = [];
+        if ($page !== null) {
+            foreach (array_keys($this->activeLanguages()) as $tag) {
+                $lang_bodies[$tag] = $this->getPreference('page_body_' . $page['id'] . '_' . $tag, '');
+            }
+        }
+
         return $this->viewResponse($this->name() . '::page-edit', [
             'title'         => ($page === null ? I18N::translate('Add a page') : I18N::translate('Edit page')) . ' — ' . $this->title(),
             'module'        => $this->name(),
             'page'          => $page,
             'body'          => $page === null ? '' : $this->pageBody($page['id']),
+            'languages'     => $this->activeLanguages(),
+            'i18n'          => $page['i18n'] ?? [],
+            'lang_bodies'   => $lang_bodies,
+            'default_lang'  => $this->defaultLanguage(),
             'access_levels' => $this->pageAccessOptions(),
             'settings_link' => $this->getConfigLink(),
             'control_panel' => route(ControlPanel::class),
@@ -976,6 +1114,27 @@ class TranslateNotesModule extends AbstractModule implements
         // Derive the slug from the supplied slug, else the menu label, else title.
         $slug = $this->uniqueSlug($slug_in !== '' ? $slug_in : ($menu !== '' ? $menu : $title), $id, $pages);
 
+        // Per-language overrides. The form lists which languages it offered in a
+        // hidden "languages" field; for each we read menu_<tag>/title_<tag> (short,
+        // kept in the index) and body_<tag> (stored in its own preference). A
+        // language with nothing filled in is dropped, so it auto-translates.
+        $i18n      = [];
+        $languages = array_filter(array_map('trim', explode(',', $data->string('languages', ''))));
+
+        foreach ($languages as $tag) {
+            $l_menu  = trim($data->string('menu_' . $tag, ''));
+            $l_title = trim($data->string('title_' . $tag, ''));
+            $l_body  = $data->string('body_' . $tag, '');
+
+            if ($l_menu !== '' || $l_title !== '' || $l_body !== '') {
+                $i18n[$tag] = ['menu' => $l_menu, 'title' => $l_title];
+                $this->setPreference('page_body_' . $id . '_' . $tag, $l_body);
+            } else {
+                // Nothing authored for this language: clear any previous override.
+                $this->setPreference('page_body_' . $id . '_' . $tag, '');
+            }
+        }
+
         $entry = [
             'id'       => $id,
             'menu'     => $menu,
@@ -983,6 +1142,7 @@ class TranslateNotesModule extends AbstractModule implements
             'title'    => $title,
             'position' => $position > 0 ? $position : count($pages) + 1,
             'access'   => $access,
+            'i18n'     => $i18n,
         ];
 
         $found = false;

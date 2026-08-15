@@ -5,12 +5,16 @@ declare(strict_types=1);
 use Fisharebest\Webtrees\I18N;
 
 /**
- * Add / edit a single custom page (admin).
+ * Add / edit a single custom page (admin), with optional per-language content.
  *
  * @var string                    $title
  * @var string                    $module
  * @var array<string,mixed>|null  $page
  * @var string                    $body
+ * @var array<string,string>      $languages     langTag => native name (active site languages)
+ * @var array<string,mixed>       $i18n          langTag => ['menu'=>…,'title'=>…]
+ * @var array<string,string>      $lang_bodies   langTag => authored body HTML
+ * @var string                    $default_lang
  * @var array<string,string>      $access_levels
  * @var string                    $settings_link
  * @var string                    $control_panel
@@ -22,6 +26,8 @@ $slug     = (string) ($page['slug'] ?? '');
 $p_title  = (string) ($page['title'] ?? '');
 $position = (int) ($page['position'] ?? 0);
 $access   = (string) ($page['access'] ?? 'public');
+
+$tab_id = static fn (string $tag): string => 'tn-tab-' . preg_replace('/[^A-Za-z0-9]/', '', $tag);
 
 ?>
 
@@ -36,22 +42,7 @@ $access   = (string) ($page['access'] ?? 'public');
 <form method="post" action="<?= e(route('module', ['module' => $module, 'action' => 'PageSave'])) ?>">
     <?= csrf_field() ?>
     <input type="hidden" name="id" value="<?= e($id) ?>">
-
-    <div class="row mb-3">
-        <label class="col-sm-3 col-form-label" for="tn-page-menu"><?= I18N::translate('Menu label') ?></label>
-        <div class="col-sm-9">
-            <input type="text" class="form-control" id="tn-page-menu" name="menu" value="<?= e($menu) ?>" maxlength="255">
-            <div class="form-text"><?= I18N::translate('The text shown in the menu dropdown.') ?></div>
-        </div>
-    </div>
-
-    <div class="row mb-3">
-        <label class="col-sm-3 col-form-label" for="tn-page-title"><?= I18N::translate('Page title') ?></label>
-        <div class="col-sm-9">
-            <input type="text" class="form-control" id="tn-page-title" name="title" value="<?= e($p_title) ?>" maxlength="255">
-            <div class="form-text"><?= I18N::translate('The heading shown at the top of the page. Defaults to the menu label.') ?></div>
-        </div>
-    </div>
+    <input type="hidden" name="languages" value="<?= e(implode(',', array_keys($languages))) ?>">
 
     <div class="row mb-3">
         <label class="col-sm-3 col-form-label" for="tn-page-slug"><?= I18N::translate('URL slug') ?></label>
@@ -80,16 +71,74 @@ $access   = (string) ($page['access'] ?? 'public');
         </div>
     </div>
 
-    <div class="row mb-3">
-        <label class="col-sm-3 col-form-label" for="tn-page-body"><?= I18N::translate('Content') ?></label>
-        <div class="col-sm-9">
-            <textarea class="form-control html-edit" id="tn-page-body" name="body" rows="18"><?= e($body) ?></textarea>
-            <div class="form-text"><?= I18N::translate('The page content. It is translated automatically into the visitor’s language, so author it in your site’s default language.') ?></div>
+    <hr>
+
+    <?php if ($languages === []) : ?>
+        <p class="text-muted"><?= I18N::translate('Author the page below. It is translated automatically into the visitor’s language.') ?></p>
+    <?php else : ?>
+        <p class="text-muted">
+            <?= I18N::translate('Author the page in your default language on the first tab. It is translated automatically into every other language. To provide a hand-written version for a particular language (which overrides the automatic translation), fill in its tab — leave a tab blank to keep the automatic translation.') ?>
+        </p>
+
+        <ul class="nav nav-tabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="tn-tab-default-btn" data-bs-toggle="tab" data-bs-target="#tn-tab-default" type="button" role="tab">
+                    <?= I18N::translate('Default') ?>
+                    <?php if ($default_lang !== '') : ?><span class="text-muted small">(<?= e($default_lang) ?>)</span><?php endif ?>
+                </button>
+            </li>
+            <?php foreach ($languages as $tag => $name) : ?>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="<?= e($tab_id($tag)) ?>-btn" data-bs-toggle="tab" data-bs-target="#<?= e($tab_id($tag)) ?>" type="button" role="tab">
+                        <?= e($name) ?>
+                        <?php if (isset($i18n[$tag]) && ((($i18n[$tag]['menu'] ?? '') !== '') || (($i18n[$tag]['title'] ?? '') !== '') || (($lang_bodies[$tag] ?? '') !== ''))) : ?>
+                            <span class="badge bg-secondary">&#10003;</span>
+                        <?php endif ?>
+                    </button>
+                </li>
+            <?php endforeach ?>
+        </ul>
+    <?php endif ?>
+
+    <div class="tab-content border-start border-end border-bottom p-3 mb-3">
+        <div class="tab-pane fade show active" id="tn-tab-default" role="tabpanel">
+            <div class="mb-3">
+                <label class="form-label" for="tn-page-menu"><?= I18N::translate('Menu label') ?></label>
+                <input type="text" class="form-control" id="tn-page-menu" name="menu" value="<?= e($menu) ?>" maxlength="255">
+                <div class="form-text"><?= I18N::translate('The text shown in the menu dropdown.') ?></div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="tn-page-title"><?= I18N::translate('Page title') ?></label>
+                <input type="text" class="form-control" id="tn-page-title" name="title" value="<?= e($p_title) ?>" maxlength="255">
+                <div class="form-text"><?= I18N::translate('The heading shown at the top of the page. Defaults to the menu label.') ?></div>
+            </div>
+            <div class="mb-1">
+                <label class="form-label" for="tn-page-body"><?= I18N::translate('Content') ?></label>
+                <textarea class="form-control html-edit" id="tn-page-body" name="body" rows="16"><?= e($body) ?></textarea>
+            </div>
         </div>
+
+        <?php foreach ($languages as $tag => $name) : ?>
+            <?php $tid = $tab_id($tag); ?>
+            <div class="tab-pane fade" id="<?= e($tid) ?>" role="tabpanel">
+                <div class="mb-3">
+                    <label class="form-label" for="<?= e($tid) ?>-menu"><?= I18N::translate('Menu label') ?> — <?= e($name) ?></label>
+                    <input type="text" class="form-control" id="<?= e($tid) ?>-menu" name="menu_<?= e($tag) ?>" value="<?= e($i18n[$tag]['menu'] ?? '') ?>" maxlength="255">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="<?= e($tid) ?>-title"><?= I18N::translate('Page title') ?> — <?= e($name) ?></label>
+                    <input type="text" class="form-control" id="<?= e($tid) ?>-title" name="title_<?= e($tag) ?>" value="<?= e($i18n[$tag]['title'] ?? '') ?>" maxlength="255">
+                </div>
+                <div class="mb-1">
+                    <label class="form-label" for="<?= e($tid) ?>-body"><?= I18N::translate('Content') ?> — <?= e($name) ?></label>
+                    <textarea class="form-control html-edit" id="<?= e($tid) ?>-body" name="body_<?= e($tag) ?>" rows="16"><?= e($lang_bodies[$tag] ?? '') ?></textarea>
+                </div>
+            </div>
+        <?php endforeach ?>
     </div>
 
     <div class="row mb-3">
-        <div class="col-sm-9 offset-sm-3">
+        <div class="col-sm-12">
             <button type="submit" class="btn btn-primary"><?= I18N::translate('save') ?></button>
             <a class="btn btn-link" href="<?= e($settings_link) ?>"><?= I18N::translate('cancel') ?></a>
         </div>
@@ -97,24 +146,28 @@ $access   = (string) ($page['access'] ?? 'public');
 </form>
 
 <script>
-    // Reuse the CKEditor that webtrees already bundles for the rich-text body.
-    // The administration layout does not always initialise textarea.html-edit,
-    // so attach it here; if CKEditor is unavailable the plain textarea is used.
+    // Reuse the CKEditor that webtrees already bundles for every rich-text body
+    // on this form (the default tab and each language tab). The administration
+    // layout does not always initialise textarea.html-edit, so attach it here;
+    // if CKEditor is unavailable the plain textareas are used.
     (function () {
-        var id = 'tn-page-body';
-
-        function attach() {
-            if (window.CKEDITOR && !window.CKEDITOR.instances[id]) {
-                window.CKEDITOR.replace(id);
+        function attachAll() {
+            if (!window.CKEDITOR) {
+                return;
             }
+            document.querySelectorAll('textarea.html-edit').forEach(function (ta) {
+                if (ta.id && !window.CKEDITOR.instances[ta.id]) {
+                    window.CKEDITOR.replace(ta.id);
+                }
+            });
         }
 
         if (window.CKEDITOR) {
-            attach();
+            attachAll();
         } else if (typeof CKEDITOR_BASEPATH !== 'undefined') {
             var s = document.createElement('script');
             s.src = CKEDITOR_BASEPATH + 'ckeditor.js';
-            s.addEventListener('load', attach);
+            s.addEventListener('load', attachAll);
             document.head.appendChild(s);
         }
     })();

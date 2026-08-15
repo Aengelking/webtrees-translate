@@ -150,8 +150,23 @@ Manage them in **Control panel → Translate Notes → Custom pages**:
 - All pages appear together in **one main-menu dropdown** whose own label you
   set (default “Menu”). This is one module, so it contributes one top-level menu
   slot — reorder or rename it under **Control panel → Menus** like any other.
-- Author each page in your **site's default language**; visitors viewing another
-  language get it translated on the fly and cached.
+
+### Multiple languages (hybrid: authored + automatic)
+
+Author each page in your **site's default language** on the *Default* tab.
+Everything on it — the menu label, the page title and the body — is translated
+automatically into whatever language the visitor is viewing the site in, and
+cached (menu labels are translated in the visitor's browser without adding edit
+controls; page titles and bodies use the same note-translation machinery).
+
+Where you want **exact wording** for a particular language instead of a machine
+translation, the page editor has **one tab per site language**: fill in that
+language's menu label, title and/or body and it is shown verbatim to visitors in
+that language. A language tab you leave blank simply keeps the automatic
+translation. So each page is multilingual out of the box, and you upgrade any
+language to a hand-written version whenever you want — the two models mix per
+page and per field. (webtrees picks the closest match, so an `en-US` override
+also serves an `en-GB` visitor.)
 
 **Importing from Simple Menu.** If you already run the JustCarmen *Simple Menu*
 module (one or several copies), press **Import from Simple Menu**. It reads each

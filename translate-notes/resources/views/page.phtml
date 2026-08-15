@@ -6,19 +6,23 @@ declare(strict_types=1);
  * A custom page (a built-in replacement for the "Simple Menu" module).
  *
  * The body is authored HTML and is rendered as-is (an administrator wrote it).
- * The wt-tn-page-title / wt-tn-page-body classes are what this module's own
- * front-end script looks for, so the title and body are translated into the
- * visitor's language automatically — the same machinery as note translation.
+ * When the content shown is the base (default-language) version, it carries the
+ * wt-tn-page-title / wt-tn-page-body classes, which this module's own front-end
+ * script looks for, so it is translated into the visitor's language on the fly.
+ * When a hand-authored version for the visitor's language is shown instead, it is
+ * already in the right language, so the plain (non-translated) classes are used.
  *
  * @var \Fisharebest\Webtrees\Tree|null $tree
  * @var string                          $title
  * @var string                          $body
+ * @var bool                            $title_translate
+ * @var bool                            $body_translate
  */
 
 ?>
 
-<h1 class="wt-tn-page-title"><?= e($title) ?></h1>
+<h1 class="<?= $title_translate ? 'wt-tn-page-title' : 'wt-tn-page-heading' ?>"><?= e($title) ?></h1>
 
-<div class="wt-tn-page-body">
+<div class="<?= $body_translate ? 'wt-tn-page-body' : 'wt-tn-page-content' ?>">
     <?= $body ?>
 </div>

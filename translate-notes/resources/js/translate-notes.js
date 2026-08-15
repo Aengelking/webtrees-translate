@@ -450,9 +450,49 @@
             });
     }
 
+    // Custom-page menu labels (see the module's getMenu). Unlike a note, a menu
+    // label is a short server-rendered anchor in the site header. We translate it
+    // in place by replacing its TEXT only (no innerHTML, no edit controls), which
+    // is safe across themes and leaves the Bootstrap dropdown caret (a CSS
+    // pseudo-element) intact. The server only tags a label when the page language
+    // differs from the language it was authored in, so same-language labels are
+    // not sent. Runs for every visitor, not just editors.
+    function translateMenuLabels() {
+        const links = document.querySelectorAll('a.wt-tn-menu-label');
+        const pageLang = primary(cfg.target);
+
+        links.forEach(function (a) {
+            if (a.dataset.wtTranslated) {
+                return;
+            }
+            a.dataset.wtTranslated = '1';
+
+            const text = a.textContent.trim();
+
+            if (text === '' || !hasTranslatableText(text)) {
+                return;
+            }
+
+            post(cfg.endpoint, { text: text, target: cfg.target, format: 'text' })
+                .then(function (data) {
+                    if (!data || data.error || typeof data.translation !== 'string' || data.translation === '') {
+                        return; // leave the original label
+                    }
+                    // Already in the page language after all - keep the original.
+                    if (data.source && primary(data.source) === pageLang) {
+                        return;
+                    }
+                    a.textContent = data.translation;
+                })
+                .catch(function () {});
+        });
+    }
+
     // Query each selector independently so a syntax error in one does not stop
     // the others; the wtTranslated guard de-duplicates any overlapping matches.
     function scan() {
+        translateMenuLabels();
+
         selectors.forEach(function (selector) {
             let nodes;
             try {
@@ -463,6 +503,10 @@
             nodes.forEach(translateNode);
         });
     }
+
+    // Menu labels are part of the site chrome, not the record, so they are
+    // translated even on a page whose notes are excluded from translation.
+    translateMenuLabels();
 
     // This page is on the "do not translate" list: leave every note as authored.
     // Editors still get a banner to switch translation back on.
