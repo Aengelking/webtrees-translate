@@ -140,7 +140,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.26.0';
+        return '0.27.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -1592,7 +1592,7 @@ class TranslateNotesModule extends AbstractModule implements
                     'translated_at' => date('Y-m-d H:i:s'),
                 ]);
 
-            $this->recordUsage(mb_strlen((string) $row->source_text));
+            $this->recordUsage(mb_strlen((string) $row->source_text), '', (string) ($row->target_lang ?? ''));
 
             FlashMessages::addMessage(I18N::translate('The entry has been re-translated.'), 'success');
         } catch (\Throwable $exception) {
@@ -1626,6 +1626,144 @@ class TranslateNotesModule extends AbstractModule implements
     }
 
     // ---------------------------------------------------------------------
+    // Usage analysis - "where are all the characters going?"
+    // ---------------------------------------------------------------------
+
+    /**
+     * Aggregate the translation cache to reveal what is driving the character
+     * usage: totals, a breakdown by target language, by source→target language
+     * pair (flagging "detection-only" pairs whose source is already the page
+     * language, e.g. EN → EN-US), likely re-translation churn (the same note
+     * translated repeatedly because its markup varies between page loads), and
+     * the largest individual entries.
+     *
+     * @return array<string,mixed>
+     */
+    private function analyzeCache(): array
+    {
+        $rows = DB::table(self::CACHE_TABLE)->get();
+
+        $total_entries = 0;
+        $total_chars   = 0;
+        $by_target     = [];
+        $by_pair       = [];
+        $same_lang     = ['count' => 0, 'chars' => 0];
+        $norm_count    = [];
+        $norm_info     = [];
+        $churn         = ['rows' => 0, 'chars' => 0];
+        $largest       = [];
+
+        foreach ($rows as $row) {
+            $src_text = (string) ($row->source_text ?? '');
+            $len      = mb_strlen($src_text);
+            $target   = (string) ($row->target_lang ?? '');
+            $src_lang = (string) ($row->source_lang ?? '');
+            $format   = (string) ($row->format ?? 'text');
+
+            $total_entries++;
+            $total_chars += $len;
+
+            $by_target[$target] ??= ['count' => 0, 'chars' => 0];
+            $by_target[$target]['count']++;
+            $by_target[$target]['chars'] += $len;
+
+            $same = $src_lang !== '' && $this->primaryLang($src_lang) === $this->primaryLang($target);
+
+            if ($same) {
+                $same_lang['count']++;
+                $same_lang['chars'] += $len;
+            }
+
+            $pair = ($src_lang !== '' ? $src_lang : '?') . ' → ' . $target;
+            $by_pair[$pair] ??= ['count' => 0, 'chars' => 0, 'same' => $same];
+            $by_pair[$pair]['count']++;
+            $by_pair[$pair]['chars'] += $len;
+
+            // Churn: the same visible text (markup/ids stripped) translated into
+            // the same language more than once means the cache is not being
+            // reused - usually volatile note markup changing the exact text.
+            $normal = mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', strip_tags($src_text))));
+            $key    = $target . '|' . $format . '|' . $normal;
+
+            if (isset($norm_count[$key])) {
+                $churn['rows']++;
+                $churn['chars'] += $len;
+            } else {
+                $norm_info[$key] = mb_substr($normal, 0, 100);
+            }
+            $norm_count[$key] = ($norm_count[$key] ?? 0) + 1;
+
+            $largest[] = [
+                'len'     => $len,
+                'target'  => $target,
+                'source'  => $src_lang,
+                'snippet' => mb_substr(trim((string) preg_replace('/\s+/u', ' ', strip_tags($src_text))), 0, 120),
+            ];
+        }
+
+        uasort($by_target, static fn (array $a, array $b): int => $b['chars'] <=> $a['chars']);
+        uasort($by_pair, static fn (array $a, array $b): int => $b['chars'] <=> $a['chars']);
+
+        // Top churn offenders (same note translated the most times).
+        $offenders = [];
+        foreach ($norm_count as $key => $count) {
+            if ($count > 1) {
+                $offenders[] = ['count' => $count, 'snippet' => $norm_info[$key] ?? ''];
+            }
+        }
+        usort($offenders, static fn (array $a, array $b): int => $b['count'] <=> $a['count']);
+        $offenders = array_slice($offenders, 0, 10);
+
+        usort($largest, static fn (array $a, array $b): int => $b['len'] <=> $a['len']);
+        $largest = array_slice($largest, 0, 20);
+
+        return [
+            'total_entries' => $total_entries,
+            'total_chars'   => $total_chars,
+            'by_target'     => $by_target,
+            'by_pair'       => $by_pair,
+            'same_lang'     => $same_lang,
+            'churn'         => $churn,
+            'offenders'     => $offenders,
+            'largest'       => $largest,
+        ];
+    }
+
+    public function getUsageAnalysisAction(ServerRequestInterface $request): ResponseInterface
+    {
+        if (!Auth::isAdmin()) {
+            return response('', 403);
+        }
+
+        $this->layout = 'layouts/administration';
+
+        return $this->viewResponse($this->name() . '::usage-analysis', [
+            'title'         => I18N::translate('Usage analysis') . ' — ' . $this->title(),
+            'module'        => $this->name(),
+            'analysis'      => $this->analyzeCache(),
+            'by_selector'   => $this->usageBySelector(),
+            'by_target_live' => $this->usageByTarget(),
+            'settings_link' => $this->getConfigLink(),
+            'control_panel' => route(ControlPanel::class),
+        ]);
+    }
+
+    /** Reset the live per-selector / per-language breakdown counters. */
+    public function postResetBreakdownAction(ServerRequestInterface $request): ResponseInterface
+    {
+        if (!Auth::isAdmin()) {
+            return response('', 403);
+        }
+
+        $this->setPreference('usage_by_selector', '');
+        $this->setPreference('usage_by_target', '');
+
+        FlashMessages::addMessage(I18N::translate('The usage breakdown has been reset.'), 'success');
+
+        return redirect(route('module', ['module' => $this->name(), 'action' => 'UsageAnalysis']));
+    }
+
+    // ---------------------------------------------------------------------
     // Translation endpoint - server-side DeepL proxy (keeps the key secret).
     // Reached via POST /module/<name>/Translate
     // ---------------------------------------------------------------------
@@ -1636,7 +1774,7 @@ class TranslateNotesModule extends AbstractModule implements
      * usage endpoint). Only real API calls are recorded here - cache hits and
      * same-language skips make no call and are not counted.
      */
-    private function recordUsage(int $chars): void
+    private function recordUsage(int $chars, string $selector = '', string $target = ''): void
     {
         if ($chars <= 0) {
             return;
@@ -1650,6 +1788,64 @@ class TranslateNotesModule extends AbstractModule implements
         $by_month = array_slice($by_month, 0, 12, true); // keep the last 12 months
 
         $this->setPreference('usage_by_month', json_encode($by_month));
+
+        // Breakdown by selector - which CSS selector's content is costing the
+        // most characters. Resettable, so an admin can measure a fresh period.
+        if ($selector !== '') {
+            $by_selector            = $this->usageMap('usage_by_selector');
+            $key                    = mb_substr($selector, 0, 200);
+            $by_selector[$key]      = ($by_selector[$key] ?? 0) + $chars;
+            arsort($by_selector);
+            $by_selector            = array_slice($by_selector, 0, 100, true);
+            $this->setPreference('usage_by_selector', json_encode($by_selector, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        }
+
+        // Breakdown by target language.
+        if ($target !== '') {
+            $by_target          = $this->usageMap('usage_by_target');
+            $by_target[$target] = ($by_target[$target] ?? 0) + $chars;
+            arsort($by_target);
+            $this->setPreference('usage_by_target', json_encode($by_target, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        }
+    }
+
+    /**
+     * Decode a "key => characters" usage preference into an int-valued map.
+     *
+     * @return array<string,int>
+     */
+    private function usageMap(string $preference): array
+    {
+        $decoded = json_decode($this->getPreference($preference, ''), true);
+
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($decoded as $key => $count) {
+            $out[(string) $key] = (int) $count;
+        }
+
+        return $out;
+    }
+
+    /** @return array<string,int> selector => characters sent, biggest first */
+    private function usageBySelector(): array
+    {
+        $map = $this->usageMap('usage_by_selector');
+        arsort($map);
+
+        return $map;
+    }
+
+    /** @return array<string,int> target language => characters sent, biggest first */
+    private function usageByTarget(): array
+    {
+        $map = $this->usageMap('usage_by_target');
+        arsort($map);
+
+        return $map;
     }
 
     /**
@@ -1695,6 +1891,9 @@ class TranslateNotesModule extends AbstractModule implements
         // "html" preserves the note's markup (headings, lists, links); anything
         // else is treated as plain text.
         $format = Validator::parsedBody($request)->string('format', 'text') === 'html' ? 'html' : 'text';
+
+        // Which selector matched this text on the page (for the usage analysis).
+        $selector = Validator::parsedBody($request)->string('selector', '');
 
         if ($text === '') {
             return response(['error' => I18N::translate('No text to translate.')], 422);
@@ -1792,8 +1991,9 @@ class TranslateNotesModule extends AbstractModule implements
                 ]
             );
 
-            // Count this call toward the module's own monthly usage estimate.
-            $this->recordUsage(mb_strlen($text));
+            // Count this call toward the module's own usage estimates (monthly
+            // total plus the per-selector and per-language breakdowns).
+            $this->recordUsage(mb_strlen($text), $selector, $target);
 
             return response([
                 'translation' => $translation,

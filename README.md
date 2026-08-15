@@ -38,6 +38,36 @@ with previous months available underneath. It counts only real API calls — cac
 hits and same-language notes are not counted — so it is a usage guide rather than
 the provider's exact bill, but it gives visibility where the provider gives none.
 
+## Finding out where the characters go
+
+Heavy traffic in non-default languages can burn through an engine quota faster
+than expected. **Control panel → Translate Notes → Usage → “Analyse usage”**
+opens a read-only report built from the cache that shows exactly what is
+consuming characters:
+
+- **Detection-only characters** — notes that turned out to already be in the page
+  language (for example an English note on an `EN-US` page, `EN → EN-US`). Without
+  a browser-side language guess, the first view of each note costs one detection
+  call even when it needs no translation; this is a one-time cost per note, and
+  the report shows how much of your total it is.
+- **Possible re-translation (churn)** — the same visible note translated more than
+  once into the same language. This means the note's markup changes between page
+  views (generated ids, “read more” wrappers), so the cache key never matches and
+  it is re-translated every time. This is the usual cause of a run-away count, and
+  the report lists the most-repeated notes.
+- **By source → target language** — where each detection-only pair is flagged.
+- **By selector (live counter)** — characters actually sent since the last reset,
+  grouped by the CSS selector that matched, so an over-broad selector (an unscoped
+  `.wt-fact-value` that catches every fact, or a large `.wt-ai-markdown` block)
+  stands out immediately. Resettable, so you can measure a fresh browsing session.
+- **Largest cached translations** — the biggest single entries.
+
+Two safeguards also cut needless characters automatically: **overlapping
+selectors no longer double-translate** (when one matched element is nested inside
+another, only the outer one is sent, so `.faq` together with `.faq_title` /
+`.faq_body` is billed once, not three times), and menu labels are only translated
+when the visitor's language differs from the site default.
+
 ## Install
 
 1. Copy the [`translate-notes`](translate-notes/) folder into your webtrees

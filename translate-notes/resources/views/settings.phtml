@@ -357,6 +357,9 @@ use Fisharebest\Webtrees\I18N;
         <div class="form-text">
             <?= I18N::translate('This server’s own estimate of characters sent to the translation engine (works for any engine, including Microsoft). It counts only real API calls — cache hits and same-language notes are not counted — so it is a usage guide, not the provider’s exact bill.') ?>
         </div>
+        <a class="btn btn-outline-secondary btn-sm mt-2" href="<?= e(route('module', ['module' => $module, 'action' => 'UsageAnalysis'])) ?>">
+            <?= I18N::translate('Analyse usage — where are the characters going?') ?>
+        </a>
     </div>
 </div>
 

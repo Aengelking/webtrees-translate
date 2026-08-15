@@ -413,7 +413,7 @@
         });
     }
 
-    function translateNode(node) {
+    function translateNode(node, selector) {
         if (node.dataset.wtTranslated) {
             return;
         }
@@ -431,7 +431,9 @@
         const pageLang = primary(cfg.target);
         const original = node.innerHTML;
 
-        post(cfg.endpoint, { text: original, target: cfg.target, format: 'html' })
+        // Report which selector matched, so the admin usage analysis can show
+        // where the characters are going.
+        post(cfg.endpoint, { text: original, target: cfg.target, format: 'html', selector: selector || '' })
             .then(function (data) {
                 if (!data || data.error || typeof data.translation !== 'string' || data.translation === '') {
                     return; // leave the original note untouched
@@ -473,7 +475,7 @@
                 return;
             }
 
-            post(cfg.endpoint, { text: text, target: cfg.target, format: 'text' })
+            post(cfg.endpoint, { text: text, target: cfg.target, format: 'text', selector: ':menu-label' })
                 .then(function (data) {
                     if (!data || data.error || typeof data.translation !== 'string' || data.translation === '') {
                         return; // leave the original label
@@ -488,10 +490,12 @@
         });
     }
 
-    // Query each selector independently so a syntax error in one does not stop
-    // the others; the wtTranslated guard de-duplicates any overlapping matches.
+    // Collect every matched node (deduped), remembering the first selector that
+    // matched it. A syntax error in one selector does not stop the others.
     function scan() {
         translateMenuLabels();
+
+        const matched = new Map(); // node -> selector that first matched it
 
         selectors.forEach(function (selector) {
             let nodes;
@@ -500,7 +504,28 @@
             } catch (e) {
                 return; // invalid selector - skip it
             }
-            nodes.forEach(translateNode);
+            nodes.forEach(function (node) {
+                if (!matched.has(node)) {
+                    matched.set(node, selector);
+                }
+            });
+        });
+
+        // Translate each matched node UNLESS an ancestor is also matched:
+        // translating the outer node already covers this text, and sending both
+        // would translate (and bill) the same characters twice or three times.
+        // This is the usual cause of run-away character counts when selectors
+        // overlap (e.g. ".faq" together with ".faq_title" and ".faq_body").
+        matched.forEach(function (selector, node) {
+            let parent = node.parentElement;
+            while (parent) {
+                if (matched.has(parent)) {
+                    node.dataset.wtTranslated = '1'; // covered by the ancestor
+                    return;
+                }
+                parent = parent.parentElement;
+            }
+            translateNode(node, selector);
         });
     }
 

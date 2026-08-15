@@ -1,0 +1,166 @@
+<?php
+
+declare(strict_types=1);
+
+use Fisharebest\Webtrees\I18N;
+
+/**
+ * "Where are the characters going?" — a read-only analysis of the translation
+ * cache plus the live per-selector / per-language breakdown.
+ *
+ * @var string              $title
+ * @var string              $module
+ * @var array<string,mixed> $analysis
+ * @var array<string,int>   $by_selector
+ * @var array<string,int>   $by_target_live
+ * @var string              $settings_link
+ * @var string              $control_panel
+ */
+
+$total_chars = (int) $analysis['total_chars'];
+$same        = $analysis['same_lang'];
+$churn       = $analysis['churn'];
+
+$pct = static fn (int $part): string => $total_chars > 0 ? (string) round($part / $total_chars * 100) . '%' : '0%';
+
+?>
+
+<?= view('components/breadcrumbs', ['links' => [
+    $control_panel => I18N::translate('Control panel'),
+    $settings_link => I18N::translate('Translate Notes'),
+    $title,
+]]) ?>
+
+<h1><?= e($title) ?></h1>
+
+<p class="text-muted">
+    <?= I18N::translate('This analyses the translation cache to show what is consuming characters. Every cached entry is one translation the engine was asked to produce.') ?>
+</p>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="border rounded p-3 h-100">
+            <div class="h4 mb-0"><?= I18N::number((int) $analysis['total_entries']) ?></div>
+            <div class="text-muted small"><?= I18N::translate('cached translations') ?></div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="border rounded p-3 h-100">
+            <div class="h4 mb-0"><?= I18N::number($total_chars) ?></div>
+            <div class="text-muted small"><?= I18N::translate('characters translated (sum of all entries)') ?></div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="border rounded p-3 h-100 <?= $same['chars'] > 0 ? 'border-warning' : '' ?>">
+            <div class="h4 mb-0"><?= I18N::number((int) $same['chars']) ?> <span class="fs-6 text-muted">(<?= $pct((int) $same['chars']) ?>)</span></div>
+            <div class="text-muted small"><?= I18N::translate('characters spent only to detect notes already in the page language (e.g. EN → EN-US)') ?></div>
+        </div>
+    </div>
+</div>
+
+<?php if ($same['chars'] > 0) : ?>
+    <div class="alert alert-warning">
+        <?= I18N::translate('%1$s of your translated characters (%2$s) were spent on notes that turned out to already be in the page language — they cost one detection call each on their first view. This is unavoidable without guessing the language in the browser, but it is a one-time cost per note: it only grows if the same notes keep being re-translated (see “Possible re-translation” below).', I18N::number((int) $same['chars']), $pct((int) $same['chars'])) ?>
+    </div>
+<?php endif ?>
+
+<?php if ((int) $churn['rows'] > 0) : ?>
+    <div class="alert alert-danger">
+        <strong><?= I18N::translate('Possible re-translation') ?>:</strong>
+        <?= I18N::translate('%1$s extra cache entries (%2$s characters) look like the same note translated more than once into the same language. That usually means the note’s markup changes between page views (generated ids, “read more” wrappers…), so the cache key never matches and it is re-translated every time. This is the most likely cause of a run-away character count.', I18N::number((int) $churn['rows']), I18N::number((int) $churn['chars'])) ?>
+    </div>
+
+    <?php if ($analysis['offenders'] !== []) : ?>
+        <h2 class="h5"><?= I18N::translate('Most repeated notes') ?></h2>
+        <div class="table-responsive mb-4">
+            <table class="table table-sm">
+                <thead><tr><th><?= I18N::translate('Times translated') ?></th><th><?= I18N::translate('Note (start)') ?></th></tr></thead>
+                <tbody>
+                    <?php foreach ($analysis['offenders'] as $o) : ?>
+                        <tr>
+                            <td class="fw-bold text-danger"><?= I18N::number((int) $o['count']) ?>×</td>
+                            <td class="small text-muted"><?= e($o['snippet']) ?>…</td>
+                        </tr>
+                    <?php endforeach ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif ?>
+<?php endif ?>
+
+<h2 class="h5"><?= I18N::translate('By source → target language') ?></h2>
+<p class="form-text mt-0"><?= I18N::translate('Rows marked “detection only” are notes already in the page language (only the region differs). Large numbers there mean many notes are being sent that did not need translating.') ?></p>
+<div class="table-responsive mb-4">
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th><?= I18N::translate('Language') ?></th>
+                <th class="text-end"><?= I18N::translate('Entries') ?></th>
+                <th class="text-end"><?= I18N::translate('Characters') ?></th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php foreach ($analysis['by_pair'] as $pair => $info) : ?>
+                <tr>
+                    <td><code><?= e($pair) ?></code></td>
+                    <td class="text-end"><?= I18N::number((int) $info['count']) ?></td>
+                    <td class="text-end"><?= I18N::number((int) $info['chars']) ?> <span class="text-muted small">(<?= $pct((int) $info['chars']) ?>)</span></td>
+                    <td><?= $info['same'] ? '<span class="badge bg-warning text-dark">' . e(I18N::translate('detection only')) . '</span>' : '' ?></td>
+                </tr>
+            <?php endforeach ?>
+        </tbody>
+    </table>
+</div>
+
+<h2 class="h5"><?= I18N::translate('By selector (live counter)') ?></h2>
+<p class="form-text mt-0">
+    <?= I18N::translate('Characters actually sent to the engine since the counter was last reset, grouped by the CSS selector whose content matched. This is the quickest way to spot a selector that is translating far more than you intended (for example an unscoped “.wt-fact-value” that catches every fact, or a large “.wt-ai-markdown” block). “:menu-label” is the custom-page menu.') ?>
+</p>
+<?php if ($by_selector === []) : ?>
+    <p class="text-muted"><?= I18N::translate('No characters recorded yet. Browse the site in a non-default language, then reload this page.') ?></p>
+<?php else : ?>
+    <div class="table-responsive mb-2">
+        <table class="table table-sm">
+            <thead><tr><th><?= I18N::translate('Selector') ?></th><th class="text-end"><?= I18N::translate('Characters') ?></th></tr></thead>
+            <tbody>
+                <?php foreach ($by_selector as $selector => $chars) : ?>
+                    <tr>
+                        <td><code><?= e($selector) ?></code></td>
+                        <td class="text-end"><?= I18N::number((int) $chars) ?></td>
+                    </tr>
+                <?php endforeach ?>
+            </tbody>
+        </table>
+    </div>
+<?php endif ?>
+<form method="post" action="<?= e(route('module', ['module' => $module, 'action' => 'ResetBreakdown'])) ?>"
+      onsubmit="return confirm('<?= e(I18N::translate('Reset the usage breakdown counters?')) ?>');" class="mb-4">
+    <?= csrf_field() ?>
+    <button type="submit" class="btn btn-outline-secondary btn-sm"><?= I18N::translate('Reset breakdown') ?></button>
+</form>
+
+<h2 class="h5"><?= I18N::translate('Largest cached translations') ?></h2>
+<p class="form-text mt-0"><?= I18N::translate('The biggest single entries. A few very large blocks (whole biographies, generated research notes) can dominate the total.') ?></p>
+<div class="table-responsive mb-4">
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th class="text-end"><?= I18N::translate('Characters') ?></th>
+                <th><?= I18N::translate('Language') ?></th>
+                <th><?= I18N::translate('Note (start)') ?></th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php foreach ($analysis['largest'] as $entry) : ?>
+                <tr>
+                    <td class="text-end fw-bold"><?= I18N::number((int) $entry['len']) ?></td>
+                    <td class="small"><code><?= e(($entry['source'] !== '' ? $entry['source'] : '?') . ' → ' . $entry['target']) ?></code></td>
+                    <td class="small text-muted"><?= e((string) $entry['snippet']) ?>…</td>
+                </tr>
+            <?php endforeach ?>
+        </tbody>
+    </table>
+</div>
+
+<a class="btn btn-link" href="<?= e($settings_link) ?>"><?= I18N::translate('back') ?></a>
