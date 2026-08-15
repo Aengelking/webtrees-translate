@@ -19,6 +19,7 @@ use Fisharebest\Webtrees\I18N;
  * @var string               $mm_email
  * @var string               $note_selector
  * @var string               $plain_selectors
+ * @var string               $exclude_selectors
  * @var int                  $note_max_chars
  * @var bool                 $local_detect
  * @var array<string,string> $edit_levels
@@ -174,6 +175,16 @@ use Fisharebest\Webtrees\I18N;
                 <?= I18N::translate('CSS selectors matching the text to translate — one per line (add more to cover other notes or text areas). The default is “.wt-tab-notes .wt-fact-value”, which covers notes in the standard themes. Inspect an element in your browser to find the right selector for other text.') ?>
                 <strong><?= I18N::translate('Keep this list tight:') ?></strong>
                 <?= I18N::translate('a broad selector (for example an unscoped “.wt-fact-value”, or one matching a whole block such as recent changes) translates entire page regions and is the usual cause of excessive character usage. Use the Usage analysis to check what each selector costs.') ?>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="exclude_selectors"><?= I18N::translate('Do not translate (exclusions)') ?></label>
+        <div class="col-sm-9">
+            <textarea class="form-control font-monospace" id="exclude_selectors" name="exclude_selectors" rows="4"><?= e($exclude_selectors) ?></textarea>
+            <div class="form-text">
+                <?= I18N::translate('CSS selectors for regions that must never be translated — one per line. An element matching one of these, or contained within one, is skipped even if a translation selector above would otherwise match it. Use this to carve out blocks such as research tasks, historic events or homepage blocks. Tip: scoping the note selector to “.wt-tab-notes .wt-fact-value” already excludes inline fact notes (death, occupation), historic events and homepage blocks, because none of those are inside the Notes tab.') ?>
             </div>
         </div>
     </div>

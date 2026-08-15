@@ -24,6 +24,11 @@
     // translated as TEXT only - no markup replacement and no edit controls.
     const plainSelectors = (cfg && Array.isArray(cfg.plainSelectors)) ? cfg.plainSelectors : [];
 
+    // Exclusion selectors: an element matching one of these, OR contained in one,
+    // is never translated - even if a translation selector would otherwise match
+    // it (e.g. a research-tasks block, historic events, inline fact notes).
+    const excludeSelectors = (cfg && Array.isArray(cfg.excludeSelectors)) ? cfg.excludeSelectors : [];
+
     if (!cfg || (!selectors.length && !plainSelectors.length) || !cfg.target) {
         return;
     }
@@ -100,6 +105,21 @@
     // ("Sekretärin") still qualifies and is translated.
     function hasTranslatableText(text) {
         return /\p{L}{3,}/u.test(text);
+    }
+
+    // Is this element inside (or itself) an excluded region? Such elements are
+    // never translated, whatever the translation selectors match.
+    function isExcluded(el) {
+        for (let i = 0; i < excludeSelectors.length; i++) {
+            try {
+                if (el.closest(excludeSelectors[i])) {
+                    return true;
+                }
+            } catch (e) {
+                // invalid selector - ignore it
+            }
+        }
+        return false;
     }
 
     // Strip anything that could execute when we assign the translated markup with
@@ -510,6 +530,12 @@
         }
         node.dataset.wtTranslated = '1';
 
+        // Never translate an element inside an excluded region (research tasks,
+        // historic events, homepage blocks, inline fact notes, …).
+        if (isExcluded(node)) {
+            return;
+        }
+
         const text = node.textContent.trim();
 
         // Skip an empty note, or one with no real words (pure numbers, dates or
@@ -557,6 +583,10 @@
             return;
         }
         el.dataset.wtTranslated = '1';
+
+        if (isExcluded(el)) {
+            return;
+        }
 
         const text = el.textContent.trim();
 

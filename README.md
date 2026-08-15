@@ -159,6 +159,17 @@ the `<a>`). The default is `.wt-site-title`; leave it empty to translate no
 chrome. These follow the same cache and free on-device detection as everything
 else, so a title costs at most one call per language.
 
+## Excluding regions
+
+The **Do not translate (exclusions)** setting is a list of CSS selectors (one per
+line) for regions that must never be translated — an element matching one, or
+contained within one, is skipped even if a translation selector would match it.
+Use it to broaden the translation coverage and then carve out the parts you do
+not want (a research-tasks block, historic events, a homepage block). Note that
+scoping the note selector to `.wt-tab-notes .wt-fact-value` already keeps
+translation off inline fact notes, historic events and homepage blocks, since
+none of those live in the Notes tab.
+
 ## Glossary — words that must never be translated
 
 Genealogy is full of surnames and place names that a translation engine will

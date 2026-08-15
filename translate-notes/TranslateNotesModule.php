@@ -150,7 +150,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.30.0';
+        return '0.31.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -443,6 +443,30 @@ class TranslateNotesModule extends AbstractModule implements
     private function plainSelectors(): array
     {
         $raw = trim($this->getPreference('plain_selectors', self::DEFAULT_PLAIN_SELECTOR));
+
+        $selectors = [];
+
+        foreach (preg_split('/\R/', $raw) ?: [] as $line) {
+            $line = trim($line);
+
+            if ($line !== '') {
+                $selectors[] = $line;
+            }
+        }
+
+        return $selectors;
+    }
+
+    /**
+     * Exclusion selectors: elements matching one of these (or contained in one)
+     * are never translated, whatever the note/plain selectors match. One per
+     * line; empty by default.
+     *
+     * @return array<string>
+     */
+    private function excludeSelectors(): array
+    {
+        $raw = trim($this->getPreference('exclude_selectors', ''));
 
         $selectors = [];
 
@@ -1331,6 +1355,8 @@ class TranslateNotesModule extends AbstractModule implements
             'selectors'   => $selectors,
             // Chrome elements (site title) translated as text only, no controls.
             'plainSelectors' => $this->plainSelectors(),
+            // Regions never translated, even if a selector matches inside them.
+            'excludeSelectors' => $this->excludeSelectors(),
             // Skip an over-large block (a whole page region caught by a broad
             // selector) rather than paying to "translate" it.
             'maxChars'    => (int) $this->getPreference('note_max_chars', (string) self::DEFAULT_MAX_CHARS),
@@ -1456,6 +1482,7 @@ class TranslateNotesModule extends AbstractModule implements
             'mm_email'         => $this->getPreference('mymemory_email', ''),
             'note_selector'    => $this->getPreference('note_selector', self::DEFAULT_SELECTOR),
             'plain_selectors'  => $this->getPreference('plain_selectors', self::DEFAULT_PLAIN_SELECTOR),
+            'exclude_selectors' => $this->getPreference('exclude_selectors', ''),
             'note_max_chars'   => (int) $this->getPreference('note_max_chars', (string) self::DEFAULT_MAX_CHARS),
             'local_detect'     => $this->getPreference('local_detect', '1') === '1',
             'edit_levels'      => $this->editLevelOptions(),
@@ -1487,6 +1514,7 @@ class TranslateNotesModule extends AbstractModule implements
         $this->setPreference('mymemory_email', trim($body->string('mymemory_email', '')));
         $this->setPreference('note_selector', trim($body->string('note_selector', self::DEFAULT_SELECTOR)));
         $this->setPreference('plain_selectors', trim($body->string('plain_selectors', self::DEFAULT_PLAIN_SELECTOR)));
+        $this->setPreference('exclude_selectors', trim($body->string('exclude_selectors', '')));
         $this->setPreference('note_max_chars', (string) max(0, $body->integer('note_max_chars', self::DEFAULT_MAX_CHARS)));
         $this->setPreference('local_detect', $body->boolean('local_detect', false) ? '1' : '0');
         $this->setPreference('pages_menu_title', trim($body->string('pages_menu_title', '')));
