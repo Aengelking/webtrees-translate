@@ -20,7 +20,11 @@
         ? cfg.selectors
         : (cfg && cfg.selector ? [cfg.selector] : []); // backward compatibility
 
-    if (!cfg || !selectors.length || !cfg.target) {
+    // "Plain" selectors are chrome elements (the site title, a tagline) that are
+    // translated as TEXT only - no markup replacement and no edit controls.
+    const plainSelectors = (cfg && Array.isArray(cfg.plainSelectors)) ? cfg.plainSelectors : [];
+
+    if (!cfg || (!selectors.length && !plainSelectors.length) || !cfg.target) {
         return;
     }
 
@@ -534,48 +538,80 @@
         });
     }
 
-    // Custom-page menu labels (see the module's getMenu). Unlike a note, a menu
-    // label is a short server-rendered anchor in the site header. We translate it
-    // in place by replacing its TEXT only (no innerHTML, no edit controls), which
-    // is safe across themes and leaves the Bootstrap dropdown caret (a CSS
-    // pseudo-element) intact. The server only tags a label when the page language
-    // differs from the language it was authored in, so same-language labels are
-    // not sent. Runs for every visitor, not just editors.
-    function translateMenuLabels() {
-        const links = document.querySelectorAll('a.wt-tn-menu-label');
+    // The innermost element that actually holds the text, so we can replace the
+    // text while keeping any wrapping link/span (and its href/attributes). E.g.
+    // <div class="wt-site-title"><a href="/">Title</a></div> -> the <a>.
+    function textHost(el) {
+        let cur = el;
+        while (cur.children.length === 1 && cur.childNodes.length === 1) {
+            cur = cur.children[0];
+        }
+        return cur;
+    }
+
+    // Translate a "plain" element (site title, menu label, tagline) as TEXT only:
+    // no markup replacement, no edit controls. Safe for site chrome and preserves
+    // any inner link. Uses the same free on-device detection and caching as notes.
+    function translatePlainNode(el, selector) {
+        if (el.dataset.wtTranslated) {
+            return;
+        }
+        el.dataset.wtTranslated = '1';
+
+        const text = el.textContent.trim();
+
+        if (text === '' || !hasTranslatableText(text)) {
+            return;
+        }
+        if (cfg.maxChars > 0 && text.length > cfg.maxChars) {
+            return;
+        }
+
         const pageLang = primary(cfg.target);
 
-        links.forEach(function (a) {
-            if (a.dataset.wtTranslated) {
-                return;
-            }
-            a.dataset.wtTranslated = '1';
-
-            const text = a.textContent.trim();
-
-            if (text === '' || !hasTranslatableText(text)) {
-                return;
+        detectPageLanguageMatch(text, pageLang).then(function (alreadyInLanguage) {
+            if (alreadyInLanguage) {
+                return; // free skip - already in the page language
             }
 
-            post(cfg.endpoint, { text: text, target: cfg.target, format: 'text', selector: ':menu-label' })
+            post(cfg.endpoint, { text: text, target: cfg.target, format: 'text', selector: selector })
                 .then(function (data) {
                     if (!data || data.error || typeof data.translation !== 'string' || data.translation === '') {
-                        return; // leave the original label
+                        return; // leave the original text
                     }
-                    // Already in the page language after all - keep the original.
                     if (data.source && primary(data.source) === pageLang) {
-                        return;
+                        return; // already in the page language after all
                     }
-                    a.textContent = data.translation;
+                    textHost(el).textContent = data.translation;
                 })
                 .catch(function () {});
+        });
+    }
+
+    // Custom-page menu labels (see getMenu) plus any admin-configured chrome
+    // selectors (e.g. the site title). Both are translated text-only. Menu labels
+    // are only tagged by the server when the page language differs from the one
+    // they were authored in. Runs for every visitor, not just editors.
+    function translatePlain() {
+        document.querySelectorAll('a.wt-tn-menu-label').forEach(function (a) {
+            translatePlainNode(a, ':menu-label');
+        });
+
+        plainSelectors.forEach(function (selector) {
+            let nodes;
+            try {
+                nodes = document.querySelectorAll(selector);
+            } catch (e) {
+                return; // invalid selector - skip it
+            }
+            nodes.forEach(function (el) { translatePlainNode(el, selector); });
         });
     }
 
     // Collect every matched node (deduped), remembering the first selector that
     // matched it. A syntax error in one selector does not stop the others.
     function scan() {
-        translateMenuLabels();
+        translatePlain();
 
         const matched = new Map(); // node -> selector that first matched it
 
@@ -611,9 +647,9 @@
         });
     }
 
-    // Menu labels are part of the site chrome, not the record, so they are
-    // translated even on a page whose notes are excluded from translation.
-    translateMenuLabels();
+    // Menu labels and the site title are part of the site chrome, not the record,
+    // so they are translated even on a page whose notes are excluded.
+    translatePlain();
 
     // This page is on the "do not translate" list: leave every note as authored.
     // Editors still get a banner to switch translation back on.

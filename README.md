@@ -147,6 +147,18 @@ inspect the element in your browser's dev tools and add its selector on its own
 line. Each selector is queried independently, so a mistake in one line does not
 break the others, and per-note language detection still applies to every match.
 
+## The site title and other chrome
+
+Short site chrome — the **site title** in the header, a tagline — is not a note:
+translating it through the note selectors would attach edit controls to it and
+could flatten a link inside it. The **Site-title / chrome selectors** setting is
+a separate list (one selector per line) whose matches are translated as **plain
+text only** — no edit controls, and any inner link is preserved (the module
+drills to the innermost text element, so `.wt-site-title` wrapping an `<a>` keeps
+the `<a>`). The default is `.wt-site-title`; leave it empty to translate no
+chrome. These follow the same cache and free on-device detection as everything
+else, so a title costs at most one call per language.
+
 ## Glossary — words that must never be translated
 
 Genealogy is full of surnames and place names that a translation engine will

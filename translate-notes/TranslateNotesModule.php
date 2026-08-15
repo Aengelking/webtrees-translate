@@ -95,6 +95,10 @@ class TranslateNotesModule extends AbstractModule implements
     // every other fact value on the page. Override in settings if your theme differs.
     private const DEFAULT_SELECTOR = '.wt-tab-notes .wt-fact-value';
 
+    // "Plain" selectors are site chrome (the site title) translated as text only -
+    // no markup replacement and no edit controls, so an inner link is preserved.
+    private const DEFAULT_PLAIN_SELECTOR = '.wt-site-title';
+
     // A matched element whose visible text is longer than this is almost never a
     // single note - it is a whole page region caught by an over-broad selector
     // (a recent-changes block, a full facts panel, a message list). Sending those
@@ -146,7 +150,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.29.0';
+        return '0.30.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -426,6 +430,31 @@ class TranslateNotesModule extends AbstractModule implements
         }
 
         return $selectors === [] ? [self::DEFAULT_SELECTOR] : $selectors;
+    }
+
+    /**
+     * "Plain" selectors: site chrome (e.g. the site title) translated as text
+     * only. One per line; blank when the feature is not wanted. Unlike the note
+     * selectors this has no default fall-back to the note default - an empty
+     * setting means "translate no chrome".
+     *
+     * @return array<string>
+     */
+    private function plainSelectors(): array
+    {
+        $raw = trim($this->getPreference('plain_selectors', self::DEFAULT_PLAIN_SELECTOR));
+
+        $selectors = [];
+
+        foreach (preg_split('/\R/', $raw) ?: [] as $line) {
+            $line = trim($line);
+
+            if ($line !== '') {
+                $selectors[] = $line;
+            }
+        }
+
+        return $selectors;
     }
 
     /**
@@ -1300,6 +1329,8 @@ class TranslateNotesModule extends AbstractModule implements
             'endpoint'    => route('module', ['module' => $this->name(), 'action' => 'Translate']),
             'target'      => strtoupper(I18N::languageTag()),
             'selectors'   => $selectors,
+            // Chrome elements (site title) translated as text only, no controls.
+            'plainSelectors' => $this->plainSelectors(),
             // Skip an over-large block (a whole page region caught by a broad
             // selector) rather than paying to "translate" it.
             'maxChars'    => (int) $this->getPreference('note_max_chars', (string) self::DEFAULT_MAX_CHARS),
@@ -1424,6 +1455,7 @@ class TranslateNotesModule extends AbstractModule implements
             'ms_region'        => $this->getPreference('microsoft_region', ''),
             'mm_email'         => $this->getPreference('mymemory_email', ''),
             'note_selector'    => $this->getPreference('note_selector', self::DEFAULT_SELECTOR),
+            'plain_selectors'  => $this->getPreference('plain_selectors', self::DEFAULT_PLAIN_SELECTOR),
             'note_max_chars'   => (int) $this->getPreference('note_max_chars', (string) self::DEFAULT_MAX_CHARS),
             'local_detect'     => $this->getPreference('local_detect', '1') === '1',
             'edit_levels'      => $this->editLevelOptions(),
@@ -1454,6 +1486,7 @@ class TranslateNotesModule extends AbstractModule implements
         $this->setPreference('microsoft_region', trim($body->string('microsoft_region', '')));
         $this->setPreference('mymemory_email', trim($body->string('mymemory_email', '')));
         $this->setPreference('note_selector', trim($body->string('note_selector', self::DEFAULT_SELECTOR)));
+        $this->setPreference('plain_selectors', trim($body->string('plain_selectors', self::DEFAULT_PLAIN_SELECTOR)));
         $this->setPreference('note_max_chars', (string) max(0, $body->integer('note_max_chars', self::DEFAULT_MAX_CHARS)));
         $this->setPreference('local_detect', $body->boolean('local_detect', false) ? '1' : '0');
         $this->setPreference('pages_menu_title', trim($body->string('pages_menu_title', '')));
