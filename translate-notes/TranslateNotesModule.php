@@ -146,7 +146,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.28.0';
+        return '0.29.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -1303,6 +1303,9 @@ class TranslateNotesModule extends AbstractModule implements
             // Skip an over-large block (a whole page region caught by a broad
             // selector) rather than paying to "translate" it.
             'maxChars'    => (int) $this->getPreference('note_max_chars', (string) self::DEFAULT_MAX_CHARS),
+            // Use the browser's free on-device language detector (when available)
+            // to skip the paid engine call for notes already in the page language.
+            'localDetect' => $this->getPreference('local_detect', '1') === '1',
             'csrf'        => Session::getCsrfToken(),
             // Pages the visitor should see untranslated (applies to everyone).
             'noTranslate' => $this->noTranslatePages(),
@@ -1422,6 +1425,7 @@ class TranslateNotesModule extends AbstractModule implements
             'mm_email'         => $this->getPreference('mymemory_email', ''),
             'note_selector'    => $this->getPreference('note_selector', self::DEFAULT_SELECTOR),
             'note_max_chars'   => (int) $this->getPreference('note_max_chars', (string) self::DEFAULT_MAX_CHARS),
+            'local_detect'     => $this->getPreference('local_detect', '1') === '1',
             'edit_levels'      => $this->editLevelOptions(),
             'edit_access_level' => $this->getPreference('edit_access_level', self::DEFAULT_EDIT_LEVEL),
             'glossary_terms'   => $this->getPreference('glossary_terms', ''),
@@ -1451,6 +1455,7 @@ class TranslateNotesModule extends AbstractModule implements
         $this->setPreference('mymemory_email', trim($body->string('mymemory_email', '')));
         $this->setPreference('note_selector', trim($body->string('note_selector', self::DEFAULT_SELECTOR)));
         $this->setPreference('note_max_chars', (string) max(0, $body->integer('note_max_chars', self::DEFAULT_MAX_CHARS)));
+        $this->setPreference('local_detect', $body->boolean('local_detect', false) ? '1' : '0');
         $this->setPreference('pages_menu_title', trim($body->string('pages_menu_title', '')));
 
         // Glossary: on change, clear only the cached translations that contain an

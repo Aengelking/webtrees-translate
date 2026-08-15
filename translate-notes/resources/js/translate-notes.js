@@ -413,31 +413,72 @@
         });
     }
 
-    function translateNode(node, selector) {
-        if (node.dataset.wtTranslated) {
-            return;
-        }
-        node.dataset.wtTranslated = '1';
+    // --- Optional free, on-device source-language detection ------------------
+    // Uses the browser's built-in Language Detector API (Chrome/Edge) when it is
+    // present. It is ONLY ever used to skip a paid engine call when we are highly
+    // confident the note is already in the page language; when the API is missing
+    // or unsure, the note is sent to the engine exactly as before. So it can only
+    // SAVE calls. (A wrong "already translated" *display* is impossible: the
+    // server still keeps the original for any same-language note it does receive.)
+    const DETECT_MIN_CHARS = 40;       // too little text is unreliable
+    const DETECT_MIN_CONFIDENCE = 0.75; // only trust a confident result
 
-        const text = node.textContent.trim();
+    let detectorPromise; // created lazily, reused
 
-        // Skip an empty note, or one with no real words (pure numbers, dates or
-        // ids). Everything else goes to the engine - we do NOT try to guess the
-        // language in the browser.
-        if (text === '' || !hasTranslatableText(text)) {
-            return;
-        }
-
-        // Skip a block that is far too large to be a single note: it is almost
-        // always a whole page region caught by an over-broad selector, and it
-        // wastes a lot of characters. Configurable; 0 disables the limit.
-        if (cfg.maxChars > 0 && text.length > cfg.maxChars) {
-            return;
+    function getDetector() {
+        if (detectorPromise !== undefined) {
+            return detectorPromise;
         }
 
-        const pageLang = primary(cfg.target);
-        const original = node.innerHTML;
+        detectorPromise = (function () {
+            try {
+                if (self.LanguageDetector && typeof self.LanguageDetector.create === 'function') {
+                    const LD = self.LanguageDetector;
+                    if (typeof LD.availability === 'function') {
+                        return Promise.resolve(LD.availability())
+                            .then(function (state) { return state === 'unavailable' ? null : LD.create(); });
+                    }
+                    return Promise.resolve(LD.create());
+                }
+                // Older experimental shape.
+                if (self.translation && typeof self.translation.createDetector === 'function') {
+                    return Promise.resolve(self.translation.createDetector());
+                }
+            } catch (e) {
+                // fall through
+            }
+            return Promise.resolve(null);
+        })().catch(function () { return null; });
 
+        return detectorPromise;
+    }
+
+    // Resolves to the confidently-detected primary language, or null when the
+    // detector is unavailable, the text is too short, or the result is uncertain.
+    function detectPageLanguageMatch(text, pageLang) {
+        if (!cfg.localDetect || text.length < DETECT_MIN_CHARS) {
+            return Promise.resolve(false);
+        }
+
+        return getDetector().then(function (detector) {
+            if (!detector) {
+                return false;
+            }
+            return Promise.resolve(detector.detect(text)).then(function (results) {
+                if (!results || !results.length) {
+                    return false;
+                }
+                const top = results[0];
+                return primary(top.detectedLanguage) === pageLang
+                    && (top.confidence || 0) >= DETECT_MIN_CONFIDENCE;
+            });
+        }).catch(function () {
+            return false;
+        });
+    }
+
+    // Send the note to the engine and, if it comes back translated, swap it in.
+    function sendToEngine(node, selector, original, pageLang) {
         // Report which selector matched, so the admin usage analysis can show
         // where the characters are going.
         post(cfg.endpoint, { text: original, target: cfg.target, format: 'html', selector: selector || '' })
@@ -457,6 +498,40 @@
             .catch(function () {
                 // Network/parse error - keep the original note.
             });
+    }
+
+    function translateNode(node, selector) {
+        if (node.dataset.wtTranslated) {
+            return;
+        }
+        node.dataset.wtTranslated = '1';
+
+        const text = node.textContent.trim();
+
+        // Skip an empty note, or one with no real words (pure numbers, dates or
+        // ids). Everything else is a candidate for translation.
+        if (text === '' || !hasTranslatableText(text)) {
+            return;
+        }
+
+        // Skip a block that is far too large to be a single note: it is almost
+        // always a whole page region caught by an over-broad selector, and it
+        // wastes a lot of characters. Configurable; 0 disables the limit.
+        if (cfg.maxChars > 0 && text.length > cfg.maxChars) {
+            return;
+        }
+
+        const pageLang = primary(cfg.target);
+        const original = node.innerHTML;
+
+        // Try the free on-device detector first; only when it is confident the
+        // note is already in the page language do we skip the engine call.
+        detectPageLanguageMatch(text, pageLang).then(function (alreadyInLanguage) {
+            if (alreadyInLanguage) {
+                return; // no paid call needed
+            }
+            sendToEngine(node, selector, original, pageLang);
+        });
     }
 
     // Custom-page menu labels (see the module's getMenu). Unlike a note, a menu

@@ -97,17 +97,26 @@ page regions on every view.
 
 - `ModuleGlobalInterface::headContent()` injects a small script whenever the
   engine is configured, passing the current page language as the target.
-- Detection is **fully engine-authoritative** — there is no browser-side
-  language guessing at all. An earlier version tried to classify each note in
-  the browser (German vs. English word frequencies) and skip notes it thought
-  were already in the page language, but that classifier was unreliable and
-  sometimes left foreign notes untranslated. Now every note with real text is
+- Detection is **engine-authoritative by default**. Every note with real text is
   sent to `/module/translate-notes/Translate` with the page language as the
   target, and the engine detects the real source language. If it turns out to be
   the page language after all, the original is kept (no redundant "translation",
   no edit controls). The only notes never sent are those with no real words —
   pure numbers, dates or ids — which nothing could translate. The translated
-  markup is sanitized before it replaces the note.
+  markup is sanitized before it replaces the note. (An early version instead
+  classified each note in the browser with a German-vs-English word-frequency
+  guess; that was unreliable and sometimes left foreign notes untranslated, so it
+  was removed.)
+- **Optional free on-device detection** (setting, on by default). Sending a note
+  just to learn it is already in the page language costs one engine call on its
+  first view. When the visitor's browser has the built-in Language Detector API
+  (Chrome/Edge), the module uses it first — free and entirely on-device — and
+  skips the engine call for a note it *confidently* finds is already in the page
+  language (with enough text to be sure). Browsers without the API fall back to
+  sending the note to the engine, exactly as before, and an uncertain result also
+  falls back. So it only ever saves calls; the only residual risk is that a very
+  short foreign note is occasionally left untranslated, which is why it is a
+  high-confidence, minimum-length check and can be switched off.
 - **Region-insensitive.** webtrees' page language may carry a region (e.g.
   `EN-US`) while an engine reports only the base language (`EN`). Languages are
   compared by their primary subtag, so an English note on an `EN-US` page counts

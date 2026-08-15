@@ -19,6 +19,7 @@ use Fisharebest\Webtrees\I18N;
  * @var string               $mm_email
  * @var string               $note_selector
  * @var int                  $note_max_chars
+ * @var bool                 $local_detect
  * @var array<string,string> $edit_levels
  * @var string               $edit_access_level
  * @var string               $glossary_terms
@@ -183,6 +184,22 @@ use Fisharebest\Webtrees\I18N;
                    value="<?= $note_max_chars ?>" min="0" step="1000" style="max-width: 12rem;">
             <div class="form-text">
                 <?= I18N::translate('Blocks whose visible text is longer than this (in characters) are skipped instead of translated — a safety net against an over-broad selector catching a whole page region. The default is 20000. Set to 0 to remove the limit. Raise it if you have genuinely long notes that must be translated.') ?>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-sm-3 col-form-label"><?= I18N::translate('Free language detection') ?></div>
+        <div class="col-sm-9">
+            <div class="form-check">
+                <input type="hidden" name="local_detect" value="0">
+                <input class="form-check-input" type="checkbox" id="local_detect" name="local_detect" value="1" <?= $local_detect ? 'checked' : '' ?>>
+                <label class="form-check-label" for="local_detect">
+                    <?= I18N::translate('Detect a note’s language in the browser before calling the engine') ?>
+                </label>
+            </div>
+            <div class="form-text">
+                <?= I18N::translate('When the visitor’s browser supports on-device language detection (Chrome/Edge), a note that it confidently finds is already in the page language is left as-is without any paid engine call. This is free and private (nothing leaves the browser). Browsers without the feature simply fall back to sending the note to the engine, exactly as before. It only ever saves calls; the rare risk is that a very short foreign note is left untranslated.') ?>
             </div>
         </div>
     </div>
