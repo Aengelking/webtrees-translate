@@ -224,6 +224,10 @@ Manage them in **Control panel → Translate Notes → Custom pages**:
 - All pages appear together in **one main-menu dropdown** whose own label you
   set (default “Menu”). This is one module, so it contributes one top-level menu
   slot — reorder or rename it under **Control panel → Menus** like any other.
+- A menu entry can be a **plain link instead of a page**: fill in its *Link*
+  field with any URL (external or an internal path) and the entry points straight
+  at that address (optionally opening in a new tab) rather than rendering a page.
+  Its menu label is still translated per language like any other.
 
 ### Multiple languages (hybrid: authored + automatic)
 

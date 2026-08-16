@@ -150,7 +150,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.31.0';
+        return '0.32.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -732,6 +732,10 @@ class TranslateNotesModule extends AbstractModule implements
                 'title'    => (string) ($entry['title'] ?? ''),
                 'position' => (int) ($entry['position'] ?? 0),
                 'access'   => in_array($access, self::PAGE_ACCESS_LEVELS, true) ? $access : self::DEFAULT_PAGE_ACCESS,
+                // A non-empty link makes this menu entry a plain link (to any URL)
+                // instead of a rendered page; "blank" opens it in a new tab.
+                'link'     => (string) ($entry['link'] ?? ''),
+                'blank'    => (bool) ($entry['blank'] ?? false),
                 // Per-language overrides for the (short) menu label and title.
                 // Bodies are kept in their own per-language preferences.
                 'i18n'     => $this->cleanI18n($entry['i18n'] ?? []),
@@ -783,6 +787,8 @@ class TranslateNotesModule extends AbstractModule implements
                 'title'    => (string) $p['title'],
                 'position' => (int) $p['position'],
                 'access'   => (string) $p['access'],
+                'link'     => (string) ($p['link'] ?? ''),
+                'blank'    => (bool) ($p['blank'] ?? false),
                 'i18n'     => $this->cleanI18n($p['i18n'] ?? []),
             ];
         }
@@ -1041,7 +1047,17 @@ class TranslateNotesModule extends AbstractModule implements
                 $class = 'menu-' . $this->name() . '-' . $page['slug'] . ($needs_translation ? ' wt-tn-menu-label' : '');
             }
 
-            $submenus[] = new Menu($label, $this->pageUrl($tree, $page['slug']), $class);
+            // A link entry points straight at its URL (optionally in a new tab);
+            // a page entry points at the rendered page.
+            if ($page['link'] !== '') {
+                $url   = $page['link'];
+                $attrs = $page['blank'] ? ['target' => '_blank', 'rel' => 'noopener'] : [];
+            } else {
+                $url   = $this->pageUrl($tree, $page['slug']);
+                $attrs = [];
+            }
+
+            $submenus[] = new Menu($label, $url, $class, $attrs);
         }
 
         return new Menu(
@@ -1072,6 +1088,11 @@ class TranslateNotesModule extends AbstractModule implements
 
         if (!$this->pageVisible($page, $tree)) {
             throw new HttpAccessDeniedException();
+        }
+
+        // A link entry has no page of its own - send the visitor to its URL.
+        if (($page['link'] ?? '') !== '') {
+            return redirect($page['link']);
         }
 
         $this->layout = 'layouts/default';
@@ -1153,6 +1174,8 @@ class TranslateNotesModule extends AbstractModule implements
         $slug_in  = trim($data->string('slug', ''));
         $position = $data->integer('position', 0);
         $access   = $data->string('access', self::DEFAULT_PAGE_ACCESS);
+        $link     = trim($data->string('link', ''));
+        $blank    = $data->boolean('blank', false);
 
         if (!in_array($access, self::PAGE_ACCESS_LEVELS, true)) {
             $access = self::DEFAULT_PAGE_ACCESS;
@@ -1201,6 +1224,8 @@ class TranslateNotesModule extends AbstractModule implements
             'title'    => $title,
             'position' => $position > 0 ? $position : count($pages) + 1,
             'access'   => $access,
+            'link'     => $link,
+            'blank'    => $blank,
             'i18n'     => $i18n,
         ];
 

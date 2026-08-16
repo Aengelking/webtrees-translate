@@ -301,7 +301,14 @@ use Fisharebest\Webtrees\I18N;
                             <?php $authored = array_keys((array) ($p['i18n'] ?? [])); ?>
                             <tr>
                                 <td><?= e($p['menu'] !== '' ? $p['menu'] : $p['title']) ?></td>
-                                <td><code><?= e($p['slug']) ?></code></td>
+                                <td>
+                                    <?php if (($p['link'] ?? '') !== '') : ?>
+                                        <span class="badge bg-info text-dark"><?= I18N::translate('Link') ?></span>
+                                        <code class="small"><?= e($p['link']) ?></code>
+                                    <?php else : ?>
+                                        <code><?= e($p['slug']) ?></code>
+                                    <?php endif ?>
+                                </td>
                                 <td><?= e($page_access_levels[$p['access']] ?? $p['access']) ?></td>
                                 <td class="small text-muted">
                                     <?php if ($authored === []) : ?>

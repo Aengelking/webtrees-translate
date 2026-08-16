@@ -26,6 +26,8 @@ $slug     = (string) ($page['slug'] ?? '');
 $p_title  = (string) ($page['title'] ?? '');
 $position = (int) ($page['position'] ?? 0);
 $access   = (string) ($page['access'] ?? 'public');
+$link     = (string) ($page['link'] ?? '');
+$blank    = (bool) ($page['blank'] ?? false);
 
 $tab_id = static fn (string $tag): string => 'tn-tab-' . preg_replace('/[^A-Za-z0-9]/', '', $tag);
 
@@ -68,6 +70,20 @@ $tab_id = static fn (string $tag): string => 'tn-tab-' . preg_replace('/[^A-Za-z
         <div class="col-sm-9">
             <input type="number" class="form-control" id="tn-page-position" name="position" value="<?= $position ?>" min="0" style="max-width: 8rem;">
             <div class="form-text"><?= I18N::translate('Order in the menu dropdown (lower numbers first). 0 places it at the end.') ?></div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <label class="col-sm-3 col-form-label" for="tn-page-link"><?= I18N::translate('Link (optional)') ?></label>
+        <div class="col-sm-9">
+            <input type="text" class="form-control" id="tn-page-link" name="link" value="<?= e($link) ?>" placeholder="https://example.com/ &nbsp;<?= e(I18N::translate('or an internal path')) ?>">
+            <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" id="tn-page-blank" name="blank" value="1" <?= $blank ? 'checked' : '' ?>>
+                <label class="form-check-label" for="tn-page-blank"><?= I18N::translate('Open in a new tab') ?></label>
+            </div>
+            <div class="form-text">
+                <?= I18N::translate('Leave empty for a normal page (the content below is shown). Enter a URL to turn this menu entry into a plain link instead — the menu label points straight at that address and the content below is ignored. The menu label is still translated per language.') ?>
+            </div>
         </div>
     </div>
 
