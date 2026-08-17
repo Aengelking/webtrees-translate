@@ -228,6 +228,9 @@ Manage them in **Control panel → Translate Notes → Custom pages**:
   field with any URL (external or an internal path) and the entry points straight
   at that address (optionally opening in a new tab) rather than rendering a page.
   Its menu label is still translated per language like any other.
+- **Reorder** the entries in the settings list by **dragging a row** or using the
+  **▲ ▼ buttons**, then press *Save order*. (Each page also has a numeric
+  *Position* field in its editor.)
 
 ### Multiple languages (hybrid: authored + automatic)
 

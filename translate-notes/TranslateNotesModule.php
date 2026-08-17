@@ -150,7 +150,7 @@ class TranslateNotesModule extends AbstractModule implements
 
     public function customModuleVersion(): string
     {
-        return '0.32.0';
+        return '0.33.0';
     }
 
     public function customModuleSupportUrl(): string
@@ -1265,6 +1265,47 @@ class TranslateNotesModule extends AbstractModule implements
         $this->setPreference('page_body_' . $id, ''); // clear the (possibly large) body
 
         FlashMessages::addMessage(I18N::translate('The page has been deleted.'), 'success');
+
+        return redirect($this->getConfigLink());
+    }
+
+    /** Re-order the custom pages from the admin list (drag-and-drop or arrows). */
+    public function postPagesReorderAction(ServerRequestInterface $request): ResponseInterface
+    {
+        if (!Auth::isAdmin()) {
+            return response('', 403);
+        }
+
+        $order = Validator::parsedBody($request)->string('order', '');
+        $ids   = array_values(array_filter(array_map('trim', explode(',', $order)), static fn (string $s): bool => $s !== ''));
+
+        $by_id = [];
+        foreach ($this->pageIndex() as $p) {
+            $by_id[$p['id']] = $p;
+        }
+
+        $ordered  = [];
+        $position = 1;
+
+        // Apply the given order first, then append any pages it did not mention
+        // (defensive: nothing is ever lost if the list is stale or incomplete).
+        foreach ($ids as $id) {
+            if (isset($by_id[$id])) {
+                $page             = $by_id[$id];
+                $page['position'] = $position++;
+                $ordered[]        = $page;
+                unset($by_id[$id]);
+            }
+        }
+
+        foreach ($by_id as $page) {
+            $page['position'] = $position++;
+            $ordered[]        = $page;
+        }
+
+        $this->savePageIndex($ordered);
+
+        FlashMessages::addMessage(I18N::translate('The menu order has been saved.'), 'success');
 
         return redirect($this->getConfigLink());
     }

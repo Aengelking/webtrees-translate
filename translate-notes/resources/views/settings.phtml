@@ -286,9 +286,10 @@ use Fisharebest\Webtrees\I18N;
             <p class="text-muted"><?= I18N::translate('No custom pages yet.') ?></p>
         <?php else : ?>
             <div class="table-responsive">
-                <table class="table table-sm align-middle">
+                <table class="table table-sm align-middle" id="tn-pages-table">
                     <thead>
                         <tr>
+                            <th style="width: 6rem;"><?= I18N::translate('Order') ?></th>
                             <th><?= I18N::translate('Menu label') ?></th>
                             <th><?= I18N::translate('URL slug') ?></th>
                             <th><?= I18N::translate('Visibility') ?></th>
@@ -296,10 +297,15 @@ use Fisharebest\Webtrees\I18N;
                             <th class="text-end"></th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="tn-pages-body">
                         <?php foreach ($pages as $p) : ?>
                             <?php $authored = array_keys((array) ($p['i18n'] ?? [])); ?>
-                            <tr>
+                            <tr draggable="true" data-id="<?= e($p['id']) ?>">
+                                <td class="text-nowrap">
+                                    <span class="tn-drag-handle" title="<?= e(I18N::translate('Drag to reorder')) ?>" style="cursor: grab;">&#9776;</span>
+                                    <button type="button" class="btn btn-sm btn-link p-0 ms-1 tn-move-up" title="<?= e(I18N::translate('Move up')) ?>" aria-label="<?= e(I18N::translate('Move up')) ?>">&#9650;</button>
+                                    <button type="button" class="btn btn-sm btn-link p-0 tn-move-down" title="<?= e(I18N::translate('Move down')) ?>" aria-label="<?= e(I18N::translate('Move down')) ?>">&#9660;</button>
+                                </td>
                                 <td><?= e($p['menu'] !== '' ? $p['menu'] : $p['title']) ?></td>
                                 <td>
                                     <?php if (($p['link'] ?? '') !== '') : ?>
@@ -335,6 +341,108 @@ use Fisharebest\Webtrees\I18N;
                     </tbody>
                 </table>
             </div>
+
+            <form method="post" action="<?= e(route('module', ['module' => $module, 'action' => 'PagesReorder'])) ?>" class="mt-2 d-flex align-items-center gap-2" id="tn-pages-order-form">
+                <?= csrf_field() ?>
+                <input type="hidden" name="order" id="tn-pages-order" value="">
+                <button type="submit" class="btn btn-primary btn-sm" id="tn-pages-save" disabled><?= I18N::translate('Save order') ?></button>
+                <span class="form-text m-0"><?= I18N::translate('Drag a row, or use the ▲ ▼ buttons, then save.') ?></span>
+            </form>
+
+            <script>
+                (function () {
+                    var tbody = document.getElementById('tn-pages-body');
+                    var orderInput = document.getElementById('tn-pages-order');
+                    var saveBtn = document.getElementById('tn-pages-save');
+                    if (!tbody || !orderInput) {
+                        return;
+                    }
+
+                    function currentOrder() {
+                        return Array.prototype.map.call(tbody.querySelectorAll('tr'), function (tr) {
+                            return tr.getAttribute('data-id');
+                        }).join(',');
+                    }
+
+                    var initial = currentOrder();
+
+                    function refresh() {
+                        var now = currentOrder();
+                        orderInput.value = now;
+                        if (saveBtn) {
+                            saveBtn.disabled = (now === initial);
+                        }
+                    }
+
+                    // Up / down buttons.
+                    tbody.addEventListener('click', function (e) {
+                        var up = e.target.closest('.tn-move-up');
+                        var down = e.target.closest('.tn-move-down');
+                        if (!up && !down) {
+                            return;
+                        }
+                        e.preventDefault();
+                        var tr = e.target.closest('tr');
+                        if (up && tr.previousElementSibling) {
+                            tbody.insertBefore(tr, tr.previousElementSibling);
+                        } else if (down && tr.nextElementSibling) {
+                            tbody.insertBefore(tr.nextElementSibling, tr);
+                        }
+                        refresh();
+                    });
+
+                    // Drag and drop.
+                    var dragRow = null;
+
+                    function rowAfter(y) {
+                        var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr:not(.tn-dragging)'));
+                        var closest = null;
+                        var closestOffset = -Infinity;
+                        rows.forEach(function (row) {
+                            var box = row.getBoundingClientRect();
+                            var offset = y - box.top - box.height / 2;
+                            if (offset < 0 && offset > closestOffset) {
+                                closestOffset = offset;
+                                closest = row;
+                            }
+                        });
+                        return closest;
+                    }
+
+                    tbody.addEventListener('dragstart', function (e) {
+                        var tr = e.target.closest('tr');
+                        if (!tr) {
+                            return;
+                        }
+                        dragRow = tr;
+                        tr.classList.add('tn-dragging');
+                        if (e.dataTransfer) {
+                            e.dataTransfer.effectAllowed = 'move';
+                        }
+                    });
+
+                    tbody.addEventListener('dragover', function (e) {
+                        if (!dragRow) {
+                            return;
+                        }
+                        e.preventDefault();
+                        var after = rowAfter(e.clientY);
+                        if (after == null) {
+                            tbody.appendChild(dragRow);
+                        } else {
+                            tbody.insertBefore(dragRow, after);
+                        }
+                    });
+
+                    tbody.addEventListener('dragend', function () {
+                        if (dragRow) {
+                            dragRow.classList.remove('tn-dragging');
+                        }
+                        dragRow = null;
+                        refresh();
+                    });
+                })();
+            </script>
         <?php endif ?>
 
         <div class="d-flex gap-2 mt-2">
